@@ -62,9 +62,15 @@ async def main() -> None:
             results[key] = {"label": label, "disc": res[res.index < cut], "hold": res[res.index >= cut]}
             print(f"  {key:<14} done", flush=True)
 
+        # spread of Sharpe ratios across the styles tried, estimated robustly (median absolute deviation),
+        # so one outlier (e.g. an idealised hedge) cannot make the luck threshold absurdly high
         daily_sr = [r["disc"]["ret"].mean() / r["disc"]["ret"].std() for r in results.values()
                     if len(r["disc"]) > 60 and r["disc"]["ret"].std() > 0]
-        sr_var = statistics.pvariance(daily_sr) if len(daily_sr) > 1 else 0.0
+        if len(daily_sr) > 2:
+            med = statistics.median(daily_sr)
+            sr_var = (1.4826 * statistics.median(abs(x - med) for x in daily_sr)) ** 2
+        else:
+            sr_var = 0.0
         n_trials = len(STYLES)
 
         print(f"\n=== strategy lab — {n_trials} styles, cost {a.cost * 100:.2f}% per unit traded ===")

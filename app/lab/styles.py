@@ -209,6 +209,120 @@ STYLES: dict[str, tuple[str, Callable, bool]] = {
 }
 
 
+# ---- batch 2 (declared 2026-11-28, before any of them was run) ---------------------
+def s_funding_change(c):
+    """Coins whose funding fell over the last week (crowd leaving) beat those where it rose."""
+    f7 = c.fund.rolling(7, min_periods=7).mean()
+    return long_short(c, -(f7 - f7.shift(7)), eligible(c), rebalance=7)
+
+
+def s_funding_divergence(c):
+    """Price up while funding is falling = rise not driven by leveraged longs (long); and the reverse."""
+    f7 = c.fund.rolling(7, min_periods=7).mean()
+    score = _past_ret(c, 7).rank(axis=1, pct=True) - (f7 - f7.shift(7)).rank(axis=1, pct=True)
+    return long_short(c, score, eligible(c), rebalance=7)
+
+
+def s_high52(c):
+    """Closeness to the 1-year high (George & Hwang): near the high -> long, far -> short."""
+    return long_short(c, c.close / c.close.rolling(365, min_periods=180).max(), eligible(c, min_age=180), rebalance=7)
+
+
+def s_resid_mom(c):
+    """Momentum of the part of the move not explained by BTC (28 days)."""
+    cov = c.rets.rolling(90, min_periods=45).cov(c.btc)
+    beta = cov.div(c.btc.rolling(90, min_periods=45).var(), axis=0)
+    resid = c.rets - beta.mul(c.btc, axis=0)
+    return long_short(c, resid.rolling(28, min_periods=20).sum(), eligible(c), rebalance=7)
+
+
+def s_ivol(c):
+    """Low idiosyncratic volatility (after removing BTC) long, high short."""
+    cov = c.rets.rolling(90, min_periods=45).cov(c.btc)
+    beta = cov.div(c.btc.rolling(90, min_periods=45).var(), axis=0)
+    resid = c.rets - beta.mul(c.btc, axis=0)
+    return long_short(c, -resid.rolling(60, min_periods=30).std(), eligible(c), rebalance=7)
+
+
+def s_skew(c):
+    """Low return skewness long, high (lottery-like) short."""
+    return long_short(c, -c.rets.rolling(60, min_periods=40).skew(), eligible(c), rebalance=7)
+
+
+def s_mom_conditional(c):
+    """7-day cross-sectional momentum, but only while the market (BTC) is above its 50-day average."""
+    b = c.close["BTCUSDT"]
+    up = (b > b.rolling(50, min_periods=40).mean()).astype(float)
+    return long_short(c, _past_ret(c, 7), eligible(c), rebalance=7).mul(up, axis=0)
+
+
+def s_tsmom_ensemble(c):
+    """Average of 7/14/30/60/120-day trend signs per coin, both directions, vol-targeted."""
+    side = sum(np.sign(_past_ret(c, d)) for d in (7, 14, 30, 60, 120)) / 5
+    return per_coin(c, side, eligible(c, 30), 30)
+
+
+def s_breakout_squeeze(c):
+    """After a quiet period (20-day range in the lowest third of its year), trade the break of the
+    20-day range in its direction; hold 10 days."""
+    hi, lo = c.close.rolling(20).max().shift(1), c.close.rolling(20).min().shift(1)
+    width = (hi - lo) / c.close
+    quiet = width <= width.rolling(365, min_periods=120).quantile(1 / 3)
+    trig = pd.DataFrame(0.0, index=c.close.index, columns=c.close.columns)
+    trig[(c.close > hi) & quiet] = 1.0
+    trig[(c.close < lo) & quiet] = -1.0
+    side = trig.replace(0.0, np.nan).ffill(limit=9).fillna(0.0)
+    return per_coin(c, side, eligible(c, 50), 20)
+
+
+def s_btc_vol_managed(c):
+    """BTC trend (above/below 100-day average) with size inversely proportional to recent variance."""
+    b = c.close["BTCUSDT"]
+    side = np.sign(b - b.rolling(100, min_periods=80).mean())
+    var = c.btc.rolling(30, min_periods=20).var() * DAYS
+    w = pd.DataFrame(0.0, index=c.close.index, columns=c.close.columns)
+    w["BTCUSDT"] = (side * 0.25 / var.clip(lower=0.04)).clip(-2, 2).fillna(0.0)
+    return w
+
+
+def s_market_funding(c):
+    """Whole-market crowding: when the average funding of the top 50 coins is in the top tenth of its
+    past year, short BTC for 7 days; in the bottom tenth, long BTC."""
+    m = c.fund.where(eligible(c, 50)).mean(axis=1).rolling(3, min_periods=3).mean()
+    hi = m.rolling(365, min_periods=180).quantile(0.9)
+    lo = m.rolling(365, min_periods=180).quantile(0.1)
+    trig = pd.Series(np.where(m > hi, -1.0, np.where(m < lo, 1.0, np.nan)), index=m.index)
+    return btc_only(c, trig.ffill(limit=6).fillna(0.0))
+
+
+def s_ethbtc_revert(c):
+    """ETH/BTC ratio far from its 30-day mean (z > 2) -> bet on the return, hold 7 days, market neutral."""
+    if "ETHUSDT" not in c.close:
+        return pd.DataFrame(0.0, index=c.close.index, columns=c.close.columns)
+    ratio = np.log(c.close["ETHUSDT"] / c.close["BTCUSDT"])
+    z = (ratio - ratio.rolling(30, min_periods=25).mean()) / ratio.rolling(30, min_periods=25).std()
+    trig = pd.Series(np.where(z > 2, -1.0, np.where(z < -2, 1.0, np.nan)), index=z.index).ffill(limit=6).fillna(0.0)
+    w = pd.DataFrame(0.0, index=c.close.index, columns=c.close.columns)
+    w["ETHUSDT"], w["BTCUSDT"] = 0.5 * trig, -0.5 * trig
+    return w
+
+
+STYLES.update({
+    "fund_change": ("تغییر فاندینگ (خروج جمعیت)", s_funding_change, False),
+    "fund_diverge": ("واگرایی قیمت و فاندینگ", s_funding_divergence, False),
+    "high52": ("نزدیکی به سقف ۱ ساله", s_high52, False),
+    "resid_mom": ("مومنتوم مستقل از بیت‌کوین", s_resid_mom, False),
+    "ivol": ("نوسان اختصاصی پایین", s_ivol, False),
+    "skew": ("چولگی پایین", s_skew, False),
+    "mom_cond": ("مومنتوم فقط در بازار صعودی", s_mom_conditional, False),
+    "tsmom_ens": ("مجموعهٔ روند ۷ تا ۱۲۰ روزه (دوطرفه)", s_tsmom_ensemble, False),
+    "squeeze_break": ("شکست بعد از فشردگی", s_breakout_squeeze, False),
+    "btc_volman": ("بیت‌کوین روندی با اندازهٔ ضدنوسان", s_btc_vol_managed, False),
+    "mkt_funding": ("ازدحام کل بازار روی بیت‌کوین", s_market_funding, False),
+    "ethbtc_revert": ("برگشت نسبت ETH/BTC", s_ethbtc_revert, False),
+})
+
+
 # ---- engine and statistics ---------------------------------------------------------
 def pnl(c: Ctx, weights: pd.DataFrame, cost: float, hedged: bool = False) -> pd.DataFrame:
     held = weights.shift(1).fillna(0.0)

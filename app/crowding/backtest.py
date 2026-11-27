@@ -11,6 +11,7 @@ import asyncio
 import json
 import time
 from dataclasses import asdict, replace
+from datetime import datetime, timezone
 
 from app.config import load_settings
 from app.crowding.strategy import TSParams, XSParams, cross_sectional, stats, time_series, trades_per_month, yearly
@@ -40,6 +41,10 @@ async def main() -> None:
     ap.add_argument("--cost", type=float, default=0.001)
     ap.add_argument("--top-n", type=int, default=50)
     ap.add_argument("--no-download", action="store_true")
+    ap.add_argument("--universe", choices=("today", "everything"), default="today",
+                    help="today = coins in today's top list (survivorship bias); everything = every coin with "
+                         "stored daily history, delisted ones included")
+    ap.add_argument("--since", default=None, help="report from this date, e.g. 2022-01-01")
     a = ap.parse_args()
     cfg = load_settings()
     store = Store(cfg.database_url)
@@ -49,18 +54,28 @@ async def main() -> None:
     t0 = time.time()
     try:
         async with store.pool.acquire() as con:
-            symbols = [r["symbol"] for r in await con.fetch(
-                "SELECT symbol FROM universe_snapshots WHERE day=(SELECT max(day) FROM universe_snapshots) ORDER BY rank")]
+            if a.universe == "everything":
+                symbols = [r["symbol"] for r in await con.fetch(
+                    "SELECT DISTINCT symbol FROM candles WHERE tf='1d' AND open_time < now() - interval '1 day'")]
+            else:
+                symbols = [r["symbol"] for r in await con.fetch(
+                    "SELECT symbol FROM universe_snapshots WHERE day=(SELECT max(day) FROM universe_snapshots) ORDER BY rank")]
         daily, funding = {}, {}
         end = int(time.time() * 1000)
         for s in symbols:
             df = await load_daily(store, s)
-            if len(df) < 100:
+            if len(df) < 60:
                 continue
             daily[s] = df
             funding[s] = await load_daily_funding(store, binance, s, int(df.index[0]), end, not a.no_download)
+        if a.since:
+            cut = int(datetime.strptime(a.since, "%Y-%m-%d").replace(tzinfo=timezone.utc).timestamp() * 1000)
+            # history before the cut still feeds the signals; only results are trimmed
+            trim = lambda res: res[res.index >= cut]  # noqa: E731
+        else:
+            trim = lambda res: res  # noqa: E731
         btc = daily["BTCUSDT"]["close"].pct_change() if "BTCUSDT" in daily else None
-        print(f"\n=== crowding (funding) backtest — {len(daily)} coins, cost {a.cost * 100:.2f}% per unit traded ===")
+        print(f"\n=== crowding (funding) backtest — universe {a.universe}, since {a.since or 'start'}, {len(daily)} coins, cost {a.cost * 100:.2f}% per unit traded ===")
         print("columns price/carry/fees/long/short are % per year; carry = funding received (+) or paid (-)")
 
         out = {}
@@ -70,6 +85,7 @@ async def main() -> None:
             for reb in (1, 7):
                 p = replace(base_xs, window=window, rebalance=reb)
                 res, w = cross_sectional(daily, funding, p)
+                res = trim(res)
                 s = stats(res, btc)
                 name = f"XS fund{window}d / rebal {reb}d"
                 s["halves_sharpe"] = halves(res["ret"])
@@ -84,6 +100,7 @@ async def main() -> None:
             for hold in (3, 7, 14):
                 p = replace(base_ts, z_in=z, hold=hold)
                 res, w = time_series(daily, funding, p)
+                res = trim(res)
                 s = stats(res, btc)
                 name = f"TS z>{z} / hold {hold}d"
                 s["halves_sharpe"] = halves(res["ret"])

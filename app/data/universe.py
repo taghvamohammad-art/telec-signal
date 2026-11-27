@@ -172,3 +172,20 @@ def add_custom(
             chosen.append(c["symbol"])
         status[inp] = ("active", c["symbol"], None if lb else "در ال‌بانک نیست؛ تحلیل می‌شود ولی سیگنال صادر نمی‌شود")
     return out, chosen, status
+
+
+def all_perp_symbols(exchange_info: dict) -> dict[str, str]:
+    """Every USDT-margined crypto perpetual Binance still lists, whatever its status
+    (TRADING, SETTLING = delisted, ...). Used to reduce survivorship bias in backtests."""
+    out: dict[str, str] = {}
+    for s in exchange_info.get("symbols", []):
+        sym = s.get("symbol", "")
+        if s.get("contractType") != "PERPETUAL" or s.get("quoteAsset") != "USDT" or not _SYMBOL_RE.match(sym):
+            continue
+        if s.get("underlyingType", "COIN") != "COIN":
+            continue
+        base, _ = normalize_base(s.get("baseAsset", sym[:-4]))
+        if base in STABLE_BASES:
+            continue
+        out[sym] = s.get("status", "?")
+    return out

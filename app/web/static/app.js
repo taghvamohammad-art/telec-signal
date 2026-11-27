@@ -50,7 +50,7 @@ function ladder(sig, price) {
     const rv = r(price);
     now = `<div class="now" style="left:${x(rv)}%" title="قیمت فعلی"><em class="num">${rv >= 0 ? '+' : ''}${rv.toFixed(2)}R</em></div>`;
   }
-  return `<div class="ladder" aria-label="موقعیت قیمت نسبت به حد ضرر و اهداف">
+  return `<div class="ladder" aria-label="موقعیت قیمت نسبت به حد ضرر و اهداف" title="R یعنی فاصلهٔ ورود تا حد ضرر. ‎−1R‎ روی حد ضرر، ‎+1.5R‎ روی TP1 و ‎+3R‎ روی TP2 است.">
     <div class="loss" style="left:${x(-1)}%;width:${x(0) - x(-1)}%"></div>
     <div class="gain" style="left:${x(0)}%;width:${x(r2) - x(0)}%"></div>
     ${tick(-1, 'حد ضرر', sig.stop)}${tick(0, 'ورود', sig.entry)}${tick(r1, 'TP1', sig.tp1)}${tick(r2, 'TP2', sig.tp2)}${now}
@@ -273,6 +273,14 @@ function rows(obj, label = (k) => k) {
   return e.map(([k, v]) => `<tr><td><bdi>${esc(label(k))}</bdi></td><td class="num">${v.n}</td><td class="num">${v.win_rate}%</td>
     <td class="num ${v.avg_r > 0 ? 'pos' : 'neg'}">${fr(v.avg_r, 3)}</td><td class="num ${v.total_r > 0 ? 'pos' : 'neg'}">${fr(v.total_r)}</td></tr>`).join('');
 }
+function rememberGlossary() {
+  document.querySelectorAll('details.glossary').forEach((d, i) => {
+    const k = `glossary-${i}`;
+    try { const v = localStorage.getItem(k); if (v !== null) d.open = v === '1'; } catch {}
+    d.addEventListener('toggle', () => { try { localStorage.setItem(k, d.open ? '1' : '0'); } catch {} });
+  });
+}
+
 async function loadBacktests() {
   const runs = await api('/api/backtests');
   $('#b-empty').classList.toggle('hidden', runs.length > 0);
@@ -427,6 +435,7 @@ function bind() {
     if (['chart', 'signals', 'paper', 'backtest'].includes(v)) showView(v);
   });
   bindCustom();
+  rememberGlossary();
   $('#tg-open').addEventListener('click', () => openTelegram().catch(showError));
   $('#logout').addEventListener('click', async () => { await api('/api/logout', { method: 'POST' }); location.href = '/login'; });
 }

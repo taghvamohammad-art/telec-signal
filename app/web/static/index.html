@@ -83,6 +83,18 @@
         <div class="muted" id="p-since"></div>
       </div>
       <div class="stats" id="p-stats"></div>
+      <details class="glossary">
+        <summary>این عددها یعنی چه؟</summary>
+        <dl>
+          <dt>وین‌ریت</dt><dd>درصد معاملات بسته‌شده با سود.</dd>
+          <dt>امید ریاضی هر معامله</dt><dd>میانگین سود یا زیان هر معامله به دلار. مثبت یعنی در بلندمدت سودده.</dd>
+          <dt>Profit Factor</dt><dd>جمع سودها تقسیم بر جمع ضررها؛ بالای ۱ یعنی سود بیشتر از ضرر.</dd>
+          <dt>حداکثر افت سرمایه</dt><dd>بیشترین کاهش موجودی نسبت به بالاترین نقطه‌اش، به درصد.</dd>
+          <dt>مارجین درگیر</dt><dd>بخشی از سرمایه که الان برای پوزیشن‌های باز کنار گذاشته شده است.</dd>
+          <dt>R روی کارت پوزیشن</dt><dd>فاصلهٔ قیمت فعلی از نقطهٔ ورود بر حسب ریسک: −1R یعنی روی حد ضرر، +1.5R یعنی روی TP1 و +3R یعنی روی TP2.</dd>
+        </dl>
+      </details>
+
       <div id="equity"></div>
       <h3 class="section-title">پوزیشن‌های باز <span class="count" id="p-open-count"></span></h3>
       <div class="tickets" id="p-open"></div>
@@ -110,19 +122,39 @@
       <pre class="num">cd /opt/telec-signal && sudo -u telec .venv/bin/python -m app.backtest.run --days 120</pre></div>
     <div id="b-main" class="hidden">
       <p class="lead" id="b-lead"></p>
+      <details class="glossary" open>
+        <summary>این عددها یعنی چه؟</summary>
+        <dl>
+          <dt>R (واحد ریسک)</dt>
+          <dd>مقداری که در هر معامله حاضرید از دست بدهید، یعنی فاصلهٔ ورود تا حد ضرر. اگر در هر معامله ۱۰ دلار ریسک کنید، <b class="num">+2R</b> یعنی ۲۰ دلار سود و <b class="num">−1R</b> یعنی ۱۰ دلار ضرر. با R می‌شود نتیجه را مستقل از اندازهٔ سرمایه مقایسه کرد.</dd>
+          <dt>میانگین R</dt>
+          <dd>نتیجهٔ متوسط هر سیگنال. <b>بالای صفر</b> یعنی سیستم در بلندمدت سودده است؛ مثلاً ۰٫۲R یعنی با ریسک ۱۰ دلاری، به‌طور میانگین هر سیگنال ۲ دلار سود. <b>زیر صفر</b> یعنی ضررده.</dd>
+          <dt>جمع R</dt>
+          <dd>جمع نتیجهٔ همهٔ سیگنال‌ها. مثلاً <span class="num">+38R</span> با ریسک ۱۰ دلار در هر معامله یعنی ۳۸۰ دلار سود در کل دوره.</dd>
+          <dt>وین‌ریت</dt>
+          <dd>درصد معاملاتی که با سود بسته شدند. به‌تنهایی کافی نیست: وین‌ریت ۴۰٪ با سودهای بزرگ‌تر از ضررها می‌تواند سودده باشد.</dd>
+          <dt>Profit Factor</dt>
+          <dd>جمع سودها تقسیم بر جمع ضررها. <b>بالای ۱</b> یعنی سود بیشتر از ضرر بوده؛ ۱٫۳ به بالا قابل قبول و ۱٫۵ به بالا خوب است.</dd>
+          <dt>حداکثر افت سرمایه</dt>
+          <dd>بیشترین فاصلهٔ موجودی از بالاترین نقطه‌اش. نشان می‌دهد در بدترین دوره چند درصد سرمایه موقتاً کم شده بود.</dd>
+          <dt>داخل نمونه، خارج نمونه، دیده‌نشده</dt>
+          <dd>دوره به چند بخش تقسیم می‌شود تا معلوم شود نتیجه فقط تصادفِ یک بازهٔ خاص نبوده. «دیده‌نشده» دوره‌ای است که موقع طراحی قواعد اصلاً بررسی نشده بود؛ معتبرترین آزمون همین است.</dd>
+        </dl>
+      </details>
+
       <div class="stats" id="b-stats"></div>
       <div id="b-equity" class="eqbox"></div>
       <h3 class="section-title">داخل نمونه و خارج نمونه</h3>
       <p class="muted small">قسمت اول و آخر دوره جدا گزارش می‌شوند. ردیف «دیده‌نشده» دوره‌ای است که هنگام انتخاب قواعد نسخهٔ ۲٫۱ به آن نگاه نکرده بودیم؛ مهم‌ترین ردیف همین است.</p>
-      <div class="table-wrap"><table><thead><tr><th>بازه</th><th>تعداد</th><th>وین‌ریت</th><th>میانگین R</th><th>جمع R</th><th>Profit Factor</th></tr></thead><tbody id="b-split"></tbody></table></div>
+      <div class="table-wrap"><table><thead><tr><th>بازه</th><th>تعداد</th><th>وین‌ریت</th><th title="نتیجهٔ متوسط هر سیگنال بر حسب واحد ریسک؛ بالای صفر یعنی سودده">میانگین R</th><th title="جمع نتیجهٔ همهٔ سیگنال‌ها بر حسب واحد ریسک">جمع R</th><th title="جمع سودها تقسیم بر جمع ضررها؛ بالای ۱ یعنی سودده">Profit Factor</th></tr></thead><tbody id="b-split"></tbody></table></div>
       <div class="grid-2">
-        <div><h3 class="section-title">به تفکیک سبک</h3><div class="table-wrap"><table><thead><tr><th>سبک</th><th>تعداد</th><th>وین‌ریت</th><th>میانگین R</th><th>جمع R</th></tr></thead><tbody id="b-style"></tbody></table></div></div>
-        <div><h3 class="section-title">به تفکیک امتیاز</h3><div class="table-wrap"><table><thead><tr><th>امتیاز</th><th>تعداد</th><th>وین‌ریت</th><th>میانگین R</th><th>جمع R</th></tr></thead><tbody id="b-score"></tbody></table></div></div>
-        <div><h3 class="section-title">به تفکیک وضعیت بازار</h3><div class="table-wrap"><table><thead><tr><th>بازار ۱ساعته</th><th>تعداد</th><th>وین‌ریت</th><th>میانگین R</th><th>جمع R</th></tr></thead><tbody id="b-regime"></tbody></table></div></div>
-        <div><h3 class="section-title">به تفکیک جهت</h3><div class="table-wrap"><table><thead><tr><th>جهت</th><th>تعداد</th><th>وین‌ریت</th><th>میانگین R</th><th>جمع R</th></tr></thead><tbody id="b-side"></tbody></table></div></div>
+        <div><h3 class="section-title">به تفکیک سبک</h3><div class="table-wrap"><table><thead><tr><th>سبک</th><th>تعداد</th><th>وین‌ریت</th><th title="نتیجهٔ متوسط هر سیگنال بر حسب واحد ریسک؛ بالای صفر یعنی سودده">میانگین R</th><th title="جمع نتیجهٔ همهٔ سیگنال‌ها بر حسب واحد ریسک">جمع R</th></tr></thead><tbody id="b-style"></tbody></table></div></div>
+        <div><h3 class="section-title">به تفکیک امتیاز</h3><div class="table-wrap"><table><thead><tr><th>امتیاز</th><th>تعداد</th><th>وین‌ریت</th><th title="نتیجهٔ متوسط هر سیگنال بر حسب واحد ریسک؛ بالای صفر یعنی سودده">میانگین R</th><th title="جمع نتیجهٔ همهٔ سیگنال‌ها بر حسب واحد ریسک">جمع R</th></tr></thead><tbody id="b-score"></tbody></table></div></div>
+        <div><h3 class="section-title">به تفکیک وضعیت بازار</h3><div class="table-wrap"><table><thead><tr><th>بازار ۱ساعته</th><th>تعداد</th><th>وین‌ریت</th><th title="نتیجهٔ متوسط هر سیگنال بر حسب واحد ریسک؛ بالای صفر یعنی سودده">میانگین R</th><th title="جمع نتیجهٔ همهٔ سیگنال‌ها بر حسب واحد ریسک">جمع R</th></tr></thead><tbody id="b-regime"></tbody></table></div></div>
+        <div><h3 class="section-title">به تفکیک جهت</h3><div class="table-wrap"><table><thead><tr><th>جهت</th><th>تعداد</th><th>وین‌ریت</th><th title="نتیجهٔ متوسط هر سیگنال بر حسب واحد ریسک؛ بالای صفر یعنی سودده">میانگین R</th><th title="جمع نتیجهٔ همهٔ سیگنال‌ها بر حسب واحد ریسک">جمع R</th></tr></thead><tbody id="b-side"></tbody></table></div></div>
       </div>
       <h3 class="section-title">سیگنال‌های بک‌تست <span class="count" id="b-count"></span></h3>
-      <div class="table-wrap"><table><thead><tr><th>زمان</th><th>ارز</th><th>جهت</th><th>امتیاز</th><th>سبک‌ها</th><th>خروج</th><th>نتیجه (R)</th></tr></thead><tbody id="b-signals"></tbody></table></div>
+      <div class="table-wrap"><table><thead><tr><th>زمان</th><th>ارز</th><th>جهت</th><th>امتیاز</th><th>سبک‌ها</th><th>خروج</th><th title="+2 یعنی دو برابر مقدار ریسک سود، −1 یعنی به اندازهٔ ریسک ضرر">نتیجه (R)</th></tr></thead><tbody id="b-signals"></tbody></table></div>
       <p class="muted small" id="b-caveats"></p>
     </div>
   </section>

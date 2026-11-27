@@ -224,3 +224,13 @@ dialog::backdrop { background: rgba(10, 12, 24, .65); }
 .cx-list li button { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 18px; padding: 0 4px; }
 .cx-list li button:hover { color: var(--short); }
 #cx-dialog { width: min(580px, 94vw); }
+
+/* ---- glossary ---- */
+.glossary { background: var(--surface); border-radius: var(--radius-m); padding: 12px 18px; margin: 0 0 14px; }
+.glossary summary { cursor: pointer; color: var(--saffron); font-weight: 600; }
+.glossary dl { margin: 12px 0 2px; display: grid; grid-template-columns: max-content 1fr; gap: 8px 18px; max-width: 90ch; }
+.glossary dt { font-weight: 600; }
+.glossary dd { margin: 0; color: var(--muted); }
+.glossary dd b { color: var(--text); }
+th[title] { cursor: help; text-decoration: underline dotted rgba(145,151,174,.6); text-underline-offset: 4px; }
+@media (max-width: 720px) { .glossary dl { grid-template-columns: 1fr; gap: 2px; } .glossary dd { margin-bottom: 8px; } }

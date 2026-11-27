@@ -65,7 +65,11 @@ main { max-width: 1240px; margin: 0 auto; padding: 18px 20px 60px; }
 .view-head p { margin: 2px 0 0; color: var(--muted); font-size: 14px; }
 
 /* ---- chart view ---- */
-.chips { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 6px; margin-bottom: 10px; scrollbar-width: thin; }
+.chips { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 6px; margin-bottom: 10px;
+  scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+.chips::-webkit-scrollbar { height: 4px; }
+.chips::-webkit-scrollbar-thumb { background: var(--line); border-radius: 2px; }
+.chips::-webkit-scrollbar-button { display: none; }
 .chip { flex: none; display: flex; align-items: center; gap: 7px; padding: 5px 12px; border-radius: 999px; background: var(--surface);
   border: 1px solid transparent; cursor: pointer; font-size: 13px; color: var(--text); }
 .chip[aria-pressed="true"] { border-color: var(--saffron); background: var(--surface-2); }

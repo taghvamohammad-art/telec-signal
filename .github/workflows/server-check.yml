@@ -1,0 +1,24 @@
+# Runs on the user's own server (self-hosted runner), because Binance blocks
+# GitHub's US-hosted runners. Until a runner is registered, jobs just wait in the queue.
+name: server-check
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test-and-connectivity:
+    runs-on: [self-hosted, linux]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Python env
+        run: |
+          python3 -m venv .venv
+          .venv/bin/pip install -q --upgrade pip
+          .venv/bin/pip install -q -r requirements-dev.txt
+      - name: Unit tests
+        run: .venv/bin/python -m pytest -q
+      - name: Live exchange connectivity
+        run: .venv/bin/python scripts/check_connectivity.py

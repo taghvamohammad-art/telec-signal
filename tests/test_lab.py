@@ -44,3 +44,19 @@ def test_market_neutral_styles_balance():
 def test_deflated_sharpe_penalises_many_trials():
     r = pd.Series(np.random.default_rng(0).normal(0.001, 0.02, 1500))
     assert deflated_sharpe(r, 2, 0.0004) > deflated_sharpe(r, 200, 0.0004)
+
+
+def test_combination_is_causal_and_uses_discovery_only():
+    from app.lab.styles import combine, pick_combos
+
+    d, f = market(4)
+    c = build_ctx(d, f)
+    full = {k: pnl(c, fn(c), 0.001, h) for k, (_, fn, h) in STYLES.items()}
+    members = ["tsmom_14", "btc_ma50", "size"]
+    a = combine(full, members)
+    cut = a.index[len(a) // 2]
+    short = {k: v[v.index <= cut] for k, v in full.items()}
+    b = combine(short, members)
+    pd.testing.assert_series_equal(a["ret"][a.index <= cut], b["ret"])
+    picks = pick_combos({k: v[v.index <= cut] for k, v in full.items()}, {"carry_neutral"})
+    assert "carry_neutral" not in picks["combo_all_pos"] and len(picks["combo_top"]) <= 6

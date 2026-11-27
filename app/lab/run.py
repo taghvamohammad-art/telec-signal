@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from app.config import load_settings
 from app.data.binance import BinanceFutures
 from app.data.store import Store
-from app.lab.styles import DISCOVERY_END, STYLES, build_ctx, deflated_sharpe, pnl, summarize
+from app.lab.styles import DISCOVERY_END, STYLES, build_ctx, combine, deflated_sharpe, pick_combos, pnl, summarize
 from app.trend.backtest import load_daily, load_daily_funding
 
 PASS_SHARPE, PASS_YEARS, PASS_DSR = 0.8, 60, 0.90
@@ -56,11 +56,23 @@ async def main() -> None:
         del daily
         cut = _ms(DISCOVERY_END)
 
-        results = {}
+        results, full = {}, {}
         for key, (label, fn, hedged) in STYLES.items():
             res = pnl(c, fn(c), a.cost, hedged)
+            full[key] = res
             results[key] = {"label": label, "disc": res[res.index < cut], "hold": res[res.index >= cut]}
             print(f"  {key:<14} done", flush=True)
+
+        hedged_keys = {k for k, v in STYLES.items() if v[2]}
+        combos = pick_combos({k: r["disc"] for k, r in results.items()}, hedged_keys)
+        for name, members in combos.items():
+            if len(members) < 2:
+                continue
+            res = combine(full, members)
+            results[name] = {"label": "ترکیب: " + "، ".join(members), "disc": res[res.index < cut], "hold": res[res.index >= cut]}
+        print("combinations (members picked from discovery data only):")
+        for name, members in combos.items():
+            print(f"  {name}: {', '.join(members) or '(none)'}")
 
         # spread of Sharpe ratios across the styles tried, estimated robustly (median absolute deviation),
         # so one outlier (e.g. an idealised hedge) cannot make the luck threshold absurdly high
@@ -71,7 +83,7 @@ async def main() -> None:
             sr_var = (1.4826 * statistics.median(abs(x - med) for x in daily_sr)) ** 2
         else:
             sr_var = 0.0
-        n_trials = len(STYLES)
+        n_trials = len(results)
 
         print(f"\n=== strategy lab — {n_trials} styles, cost {a.cost * 100:.2f}% per unit traded ===")
         print(f"discovery: start .. {DISCOVERY_END}   |   holdout: after it (shown only for styles that pass)")

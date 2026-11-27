@@ -382,3 +382,47 @@ def summarize(res: pd.DataFrame, btc: pd.Series) -> dict:
             "fees_pct_yr": round(float(100 * res["fees"].mean() * DAYS), 1),
             "btc_corr": round(float(r.corr(btc.reindex(r.index))), 2),
             "yearly": yearly, "days": len(r)}
+
+
+# ---- combinations (rules declared 2026-11-28, before any combination was run) ---------------
+TREND_FAMILY = ["tsmom_14", "tsmom_60", "tsmom_regime", "tsmom_ens", "btc_ma50", "btc_volman"]
+
+
+def risk_scaled(ret: pd.Series, target: float = 0.15, window: int = 60) -> pd.Series:
+    """Scale a style's daily returns to a target yearly vol using only its past vol."""
+    vol = (ret.rolling(window, min_periods=30).std() * math.sqrt(DAYS)).shift(1)
+    return (ret * (target / vol).clip(upper=3.0)).where(vol > 0)
+
+
+def combine(rets: dict[str, pd.DataFrame], members: list[str]) -> pd.DataFrame:
+    """Equal-risk portfolio of styles: each member scaled to the same past vol, then averaged."""
+    cols = {m: risk_scaled(rets[m]["ret"]) for m in members if m in rets}
+    frame = pd.DataFrame(cols)
+    ret = frame.mean(axis=1, skipna=True).fillna(0.0)
+    scale = frame.notna().sum(axis=1).clip(lower=1)
+    def part(col):  # costs/carry of members, with the same scaling, for the report
+        f = pd.DataFrame({m: rets[m][col] * (cols[m] / rets[m]["ret"]).replace([np.inf, -np.inf], np.nan) for m in cols})
+        return f.sum(axis=1, skipna=True) / scale
+    out = pd.DataFrame({"ret": ret, "carry": part("carry").fillna(0.0), "fees": part("fees").fillna(0.0), "gross": 1.0})
+    first = frame.notna().any(axis=1)
+    return out[out.index >= first[first].index[0]] if first.any() else out.iloc[0:0]
+
+
+def pick_combos(disc: dict[str, pd.DataFrame], hedged: set[str]) -> dict[str, list[str]]:
+    """Members chosen from DISCOVERY data only.
+    top: best styles by Sharpe (>= 0.5) whose returns correlate < 0.5 with those already picked, max 6.
+    trend: the trend-following family, fixed.
+    all_pos: every style with a positive Sharpe."""
+    sr = {}
+    for k, d in disc.items():
+        r = d["ret"].dropna()
+        if k not in hedged and len(r) > 60 and r.std() > 0:
+            sr[k] = r.mean() / r.std() * math.sqrt(DAYS)
+    top: list[str] = []
+    for k in sorted(sr, key=sr.get, reverse=True):
+        if sr[k] < 0.5 or len(top) >= 6:
+            continue
+        if all(abs(disc[k]["ret"].corr(disc[t]["ret"])) < 0.5 for t in top):
+            top.append(k)
+    return {"combo_top": top, "combo_trend": [k for k in TREND_FAMILY if k in disc],
+            "combo_all_pos": [k for k, v in sr.items() if v > 0]}

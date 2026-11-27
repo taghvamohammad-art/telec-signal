@@ -245,3 +245,42 @@ CREATE TABLE IF NOT EXISTS custom_symbols (
     added_at    timestamptz NOT NULL DEFAULT now(),
     checked_at  timestamptz
 );
+
+-- ---- Hyperliquid large-trader tracking (data collection for later tests) ----
+-- whale_wallets: which wallets were chosen on each day, with the leaderboard figures known THAT day
+CREATE TABLE IF NOT EXISTS whale_wallets (
+    day            date             NOT NULL,
+    address        text             NOT NULL,
+    rank           integer          NOT NULL,
+    account_value  double precision NOT NULL,
+    pnl_all        double precision,
+    roi_all        double precision,
+    pnl_month      double precision,
+    roi_month      double precision,
+    vlm_month      double precision,
+    PRIMARY KEY (day, address)
+);
+CREATE TABLE IF NOT EXISTS whale_positions (
+    ts             timestamptz      NOT NULL,
+    address        text             NOT NULL,
+    coin           text             NOT NULL,
+    size           double precision NOT NULL,   -- signed: + long, - short
+    notional       double precision NOT NULL,   -- signed, USD
+    entry_px       double precision,
+    leverage       double precision,
+    upnl           double precision,
+    account_value  double precision,
+    PRIMARY KEY (address, coin, ts)
+);
+CREATE TABLE IF NOT EXISTS whale_flow (
+    ts             timestamptz      NOT NULL,
+    coin           text             NOT NULL,
+    wallets        integer          NOT NULL,   -- wallets checked in this snapshot
+    n_long         integer          NOT NULL,
+    n_short        integer          NOT NULL,
+    long_notional  double precision NOT NULL,
+    short_notional double precision NOT NULL,
+    PRIMARY KEY (coin, ts)
+);
+CREATE INDEX IF NOT EXISTS whale_flow_ts ON whale_flow (ts);
+CREATE INDEX IF NOT EXISTS whale_positions_ts ON whale_positions (ts);

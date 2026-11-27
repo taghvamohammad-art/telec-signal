@@ -179,3 +179,14 @@ CREATE TABLE IF NOT EXISTS paper_trades (
     UNIQUE (account_id, candidate_id)
 );
 CREATE INDEX IF NOT EXISTS paper_trades_account_idx ON paper_trades (account_id, status);
+
+-- ---- backtests ---------------------------------------------------------
+CREATE TABLE IF NOT EXISTS backtest_runs (
+    id          serial      PRIMARY KEY,
+    created_at  timestamptz NOT NULL DEFAULT now(),
+    params      jsonb       NOT NULL,
+    summary     jsonb       NOT NULL,
+    curve       jsonb       NOT NULL,
+    signals     jsonb       NOT NULL,
+    trades      jsonb       NOT NULL
+);

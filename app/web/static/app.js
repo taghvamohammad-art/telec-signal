@@ -242,6 +242,68 @@ async function startPaper(form, errEl) {
   await loadPaper();
 }
 
+// ---- backtest view -------------------------------------------------------
+let btChart, btSeries;
+const SIDE_KEY_FA = { long: 'خرید', short: 'فروش' };
+const fr = (v, d = 2) => v == null ? '—' : `${v > 0 ? '+' : ''}${Number(v).toFixed(d)}`;
+function initBacktestChart() {
+  btChart = LightweightCharts.createChart($('#b-equity'), {
+    layout: { background: { color: C.surface }, textColor: C.muted, fontFamily: 'Vazirmatn, Tahoma, sans-serif' },
+    grid: { vertLines: { visible: false }, horzLines: { color: 'rgba(44,53,86,.45)' } },
+    rightPriceScale: { borderVisible: false }, timeScale: { borderVisible: false },
+  });
+  btSeries = btChart.addAreaSeries({ lineColor: C.saffron, topColor: 'rgba(233,180,76,.28)', bottomColor: 'rgba(233,180,76,0)', lineWidth: 2 });
+  new ResizeObserver(() => btChart.applyOptions({ width: $('#b-equity').clientWidth, height: $('#b-equity').clientHeight })).observe($('#b-equity'));
+}
+function rows(obj, label = (k) => k) {
+  const e = Object.entries(obj || {});
+  if (!e.length) return '<tr><td colspan="5" class="muted">بدون معامله</td></tr>';
+  return e.map(([k, v]) => `<tr><td><bdi>${esc(label(k))}</bdi></td><td class="num">${v.n}</td><td class="num">${v.win_rate}%</td>
+    <td class="num ${v.avg_r > 0 ? 'pos' : 'neg'}">${fr(v.avg_r, 3)}</td><td class="num ${v.total_r > 0 ? 'pos' : 'neg'}">${fr(v.total_r)}</td></tr>`).join('');
+}
+async function loadBacktests() {
+  const runs = await api('/api/backtests');
+  $('#b-empty').classList.toggle('hidden', runs.length > 0);
+  $('#b-main').classList.toggle('hidden', runs.length === 0);
+  $('#b-runs').classList.toggle('hidden', runs.length === 0);
+  if (!runs.length) return;
+  const sel = $('#b-runs');
+  const cur = Number(sel.value) || runs[0].id;
+  sel.innerHTML = runs.map((r) => `<option value="${r.id}" ${r.id === cur ? 'selected' : ''}>#${r.id} · ${when(r.created_at)} · ${r.days} روز</option>`).join('');
+  await loadBacktest(cur);
+}
+async function loadBacktest(id) {
+  const b = await api(`/api/backtests/${id}`);
+  const s = b.summary, a = s.signal_r.all, p = s.portfolio;
+  const days = Math.round((s.period.end - s.period.start) / 864e5);
+  $('#b-lead').innerHTML = a.n
+    ? `در ${days} روز روی ${s.symbols} ارز، <b class="num">${a.n}</b> سیگنال بسته شد. میانگین هر سیگنال <b class="num ${a.avg_r > 0 ? 'pos' : 'neg'}">${fr(a.avg_r, 2)}R</b> بود؛ یعنی با ریسک ثابت در هر معامله، جمع نتیجه <b class="num ${a.total_r > 0 ? 'pos' : 'neg'}">${fr(a.total_r, 1)}R</b> می‌شود.`
+    : `در ${days} روز هیچ سیگنالی با قواعد فعلی صادر نشد.`;
+  const ps = p.stats;
+  $('#b-stats').innerHTML = [
+    ['وین‌ریت سیگنال‌ها', a.n ? `${a.win_rate}%` : '—'], ['Profit Factor', a.profit_factor ?? '—'],
+    [`حساب آزمایشی با ${money(p.capital)} دلار`, `${money(p.final_equity)}`], ['معاملات حساب', ps.trades],
+    ['حداکثر افت سرمایه', pct(ps.max_drawdown_pct)],
+  ].map(([k, v]) => `<div><span>${k}</span><b class="num">${v}</b></div>`).join('');
+  const pts = new Map(b.curve.map((c) => [Math.floor(c.t / 1000) + TZ, c.equity]));
+  btSeries.setData([...pts].sort((x, y) => x[0] - y[0]).map(([time, value]) => ({ time, value })));
+  btChart.timeScale().fitContent();
+  const split = (k, label) => { const v = s.signal_r[k]; return `<tr><td>${label}</td><td class="num">${v.n}</td><td class="num">${v.n ? v.win_rate + '%' : '—'}</td>
+    <td class="num ${v.avg_r > 0 ? 'pos' : 'neg'}">${fr(v.avg_r, 3)}</td><td class="num">${fr(v.total_r)}</td><td class="num">${v.profit_factor ?? '—'}</td></tr>`; };
+  $('#b-split').innerHTML = split('in_sample', 'داخل نمونه (اول دوره)') + split('out_of_sample', 'خارج نمونه (آخر دوره)');
+  $('#b-style').innerHTML = rows(s.signal_r.by_style, (k) => STYLE_FA[k] || k);
+  $('#b-score').innerHTML = rows(s.signal_r.by_score);
+  $('#b-regime').innerHTML = rows(s.signal_r.by_regime, (k) => REGIME_FA[k] || k);
+  $('#b-side').innerHTML = rows(s.signal_r.by_side, (k) => SIDE_KEY_FA[k] || k);
+  $('#b-count').textContent = b.signals.length ? `${b.signals.length} مورد آخر` : '';
+  $('#b-signals').innerHTML = b.signals.map((x) => `<tr data-symbol="${esc(x.symbol)}"><td>${when(x.bar_time + TF_MS['15m'])}</td><td>${esc(x.symbol)}</td>
+    <td class="side ${sideCls(x.side)}">${sideFa(x.side)}</td><td class="num">${Math.round(x.score)}</td>
+    <td>${(x.styles || []).filter((v) => v.core !== false).map((v) => STYLE_FA[v.style] || v.style).join('، ')}</td>
+    <td>${x.status === 'closed' ? (EXIT_FA[x.exit_reason] || x.exit_reason) : x.status === 'open' ? 'باز' : 'پر نشد'}</td>
+    <td class="num ${x.r > 0 ? 'pos' : x.r < 0 ? 'neg' : ''}">${x.status === 'closed' ? fr(x.r) : '—'}</td></tr>`).join('');
+  $('#b-caveats').textContent = 'محدودیت‌ها: فهرست ارزها همان فهرست امروز است (ارزهایی که از فهرست خارج شده‌اند در آزمون نیستند)؛ قیمت‌ها از بایننس است؛ اگر یک کندل ۱۵ دقیقه‌ای هم حد ضرر و هم هدف را لمس کند، ضرر فرض شده است.';
+}
+
 // ---- shell ---------------------------------------------------------------
 function showError(e) { if (e.message !== 'unauthorized') console.error(e); }
 
@@ -252,6 +314,7 @@ function showView(name) {
   if (name === 'chart') loadChart(false).catch(showError);
   if (name === 'signals') loadSignals().catch(showError);
   if (name === 'paper') loadPaper().catch(showError);
+  if (name === 'backtest') loadBacktests().catch(showError);
 }
 
 function bind() {
@@ -277,6 +340,8 @@ function bind() {
   $('#s-tickets').addEventListener('click', openOnChart);
   $('#p-open').addEventListener('click', openOnChart);
   $('#p-hist').addEventListener('click', openOnChart);
+  $('#b-signals').addEventListener('click', openOnChart);
+  $('#b-runs').addEventListener('change', (e) => loadBacktest(Number(e.target.value)).catch(showError));
   $('#p-start-form').addEventListener('submit', (e) => { e.preventDefault(); startPaper(e.target, $('#p-start-err')).catch((x) => { $('#p-start-err').textContent = x.message; }); });
   $('#p-reset-form').addEventListener('submit', (e) => {
     e.preventDefault();
@@ -284,7 +349,7 @@ function bind() {
   });
   window.addEventListener('hashchange', () => {
     const v = location.hash.slice(1);
-    if (['chart', 'signals', 'paper'].includes(v)) showView(v);
+    if (['chart', 'signals', 'paper', 'backtest'].includes(v)) showView(v);
   });
   $('#logout').addEventListener('click', async () => { await api('/api/logout', { method: 'POST' }); location.href = '/login'; });
 }
@@ -293,13 +358,14 @@ async function main() {
   bind();
   initChart();
   initEquity();
+  initBacktestChart();
   const me = await api('/api/me');
   $('#who').textContent = me.username;
   state.symbols = await api('/api/symbols');
   state.symbol = state.symbols.length ? state.symbols[0].symbol : null;
   renderChips();
   const start = (location.hash || '#chart').slice(1);
-  showView(['chart', 'signals', 'paper'].includes(start) ? start : 'chart');
+  showView(['chart', 'signals', 'paper', 'backtest'].includes(start) ? start : 'chart');
   if (start !== 'chart') loadChart().catch(showError);
   // refresh the visible view every minute (candles close every 15 minutes, marks every 5)
   setInterval(() => {

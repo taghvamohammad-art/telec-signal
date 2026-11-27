@@ -78,6 +78,22 @@ def analyze(
         btc_prep = prep if symbol == "BTCUSDT" else (prepare(btc_frames, now_ms) if btc_frames else None)
         btc_ctx = btc_context(btc_prep)
 
+    return evaluate(symbol, prep, btc_ctx, funding, weights, f_news)
+
+
+def evaluate(
+    symbol: str,
+    prep: dict[str, pd.DataFrame],
+    btc_ctx,
+    funding: float | None = None,
+    weights: dict[str, float] | None = None,
+    f_news: float = 1.0,
+) -> tuple[Candidate | None, Diagnosis]:
+    """Decision on frames that already carry indicators and contain only closed bars.
+
+    Shared by the live engine and the backtest so both use identical rules.
+    btc_ctx: (regime, move) or a zero-argument callable returning it (computed only when needed).
+    """
     regime = classify(prep["1h"])
     bias = htf_bias(prep["4h"])
     ctx = Context(symbol, prep["15m"], prep["1h"], prep["4h"], prep["1d"], regime, bias)
@@ -90,7 +106,7 @@ def analyze(
         diag.result = "no_votes"
         return None, diag
 
-    btc_reg, btc_move = btc_ctx
+    btc_reg, btc_move = btc_ctx() if callable(btc_ctx) else btc_ctx
     strong_sides = {v.side for v in votes if v.core and v.s >= STRONG}
     side = next(iter(strong_sides)) if len(strong_sides) == 1 else max(votes, key=lambda v: v.s).side
     f_mkt, notes = market_factor(side, btc_reg, btc_move, funding, symbol == "BTCUSDT")

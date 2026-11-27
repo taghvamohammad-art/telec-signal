@@ -176,3 +176,11 @@ def test_analyze_insufficient_data():
     frames = {tf: frame(random_walk(20), tf) for tf in ("15m", "1h", "4h", "1d")}
     _, diag = analyze("XUSDT", frames, T0 + 10**10)
     assert diag.result == "insufficient_data"
+
+
+def test_stop_taken_from_valid_style_when_strongest_is_stale():
+    votes = [V("breakout", 1, 0.95, 101.0), V("liquidity_sweep", 1, 0.8, 97.0)]  # breakout stop already above entry
+    c, why = build_candidate("X", votes, 100, 3, 1.0)
+    assert why == "ok" and c.stop == 97.0
+    stale = [V("breakout", 1, 0.95, 101.0), V("liquidity_sweep", 1, 0.8, 100.5)]
+    assert build_candidate("X", stale, 100, 3, 1.0) == (None, "stop_wrong_side")

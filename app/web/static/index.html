@@ -17,6 +17,8 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M5 12h3l2-6 4 12 2-6h3"/></svg>سیگنال‌ها</button>
     <button role="tab" data-view="paper" aria-selected="false">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h4"/></svg>ترید مجازی</button>
+    <button role="tab" data-view="backtest" aria-selected="false">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 7v5l3 2"/><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3L4 9.4"/><path d="M4 5v4.4h4.4"/></svg>بک‌تست</button>
   </nav>
   <div class="who"><span id="who"></span><button class="btn quiet" id="logout">خروج</button></div>
 </header>
@@ -89,6 +91,32 @@
           <button class="btn quiet" type="submit">پاک کردن تاریخچه و شروع دوباره</button>
         </form>
       </details>
+    </div>
+  </section>
+  <!-- backtest -->
+  <section class="view" id="view-backtest" hidden>
+    <div class="view-head">
+      <div><h1>بک‌تست</h1><p>همین قواعد روی داده‌های گذشته، کندل به کندل و بدون دیدن آینده، اجرا شده است.</p></div>
+      <select class="field" id="b-runs" aria-label="اجراهای بک‌تست"></select>
+    </div>
+    <div id="b-empty" class="empty hidden"><b>هنوز بک‌تستی اجرا نشده.</b>روی سرور اجرا کنید:
+      <pre class="num">cd /opt/telec-signal && sudo -u telec .venv/bin/python -m app.backtest.run --days 120</pre></div>
+    <div id="b-main" class="hidden">
+      <p class="lead" id="b-lead"></p>
+      <div class="stats" id="b-stats"></div>
+      <div id="b-equity" class="eqbox"></div>
+      <h3 class="section-title">داخل نمونه و خارج نمونه</h3>
+      <p class="muted small">قسمت اول دوره (داخل نمونه) و قسمت آخر (خارج نمونه) جدا گزارش می‌شوند. اگر نتیجه فقط در قسمت اول خوب باشد، قواعد قابل اعتماد نیستند.</p>
+      <div class="table-wrap"><table><thead><tr><th>بازه</th><th>تعداد</th><th>وین‌ریت</th><th>میانگین R</th><th>جمع R</th><th>Profit Factor</th></tr></thead><tbody id="b-split"></tbody></table></div>
+      <div class="grid-2">
+        <div><h3 class="section-title">به تفکیک سبک</h3><div class="table-wrap"><table><thead><tr><th>سبک</th><th>تعداد</th><th>وین‌ریت</th><th>میانگین R</th><th>جمع R</th></tr></thead><tbody id="b-style"></tbody></table></div></div>
+        <div><h3 class="section-title">به تفکیک امتیاز</h3><div class="table-wrap"><table><thead><tr><th>امتیاز</th><th>تعداد</th><th>وین‌ریت</th><th>میانگین R</th><th>جمع R</th></tr></thead><tbody id="b-score"></tbody></table></div></div>
+        <div><h3 class="section-title">به تفکیک وضعیت بازار</h3><div class="table-wrap"><table><thead><tr><th>بازار ۱ساعته</th><th>تعداد</th><th>وین‌ریت</th><th>میانگین R</th><th>جمع R</th></tr></thead><tbody id="b-regime"></tbody></table></div></div>
+        <div><h3 class="section-title">به تفکیک جهت</h3><div class="table-wrap"><table><thead><tr><th>جهت</th><th>تعداد</th><th>وین‌ریت</th><th>میانگین R</th><th>جمع R</th></tr></thead><tbody id="b-side"></tbody></table></div></div>
+      </div>
+      <h3 class="section-title">سیگنال‌های بک‌تست <span class="count" id="b-count"></span></h3>
+      <div class="table-wrap"><table><thead><tr><th>زمان</th><th>ارز</th><th>جهت</th><th>امتیاز</th><th>سبک‌ها</th><th>خروج</th><th>نتیجه (R)</th></tr></thead><tbody id="b-signals"></tbody></table></div>
+      <p class="muted small" id="b-caveats"></p>
     </div>
   </section>
 </main>

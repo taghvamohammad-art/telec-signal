@@ -73,6 +73,23 @@ class BinanceFutures:
         """Mark price + last funding rate for all symbols (one call)."""
         return await self._get("/fapi/v1/premiumIndex")
 
+    async def funding_history(self, symbol: str, start_ms: int, end_ms: int) -> list[tuple[int, float, float]]:
+        """Settled funding rates: (funding_time_ms, rate, mark_price or 0)."""
+        out: list[tuple[int, float, float]] = []
+        cursor = start_ms
+        while cursor < end_ms:
+            rows = await self._get("/fapi/v1/fundingRate", {"symbol": symbol, "startTime": cursor, "endTime": end_ms, "limit": 1000})
+            if not rows:
+                break
+            for r in rows:
+                mark = r.get("markPrice") or 0
+                out.append((int(r["fundingTime"]), float(r["fundingRate"]), float(mark) if mark != "" else 0.0))
+            nxt = int(rows[-1]["fundingTime"]) + 1
+            if nxt <= cursor or len(rows) < 1000:
+                break
+            cursor = nxt
+        return out
+
     async def open_interest(self, symbol: str) -> dict:
         return await self._get("/fapi/v1/openInterest", {"symbol": symbol})
 

@@ -102,13 +102,15 @@ def build_candidate(
     if score < THRESHOLD:
         return None, f"score_{score}"
 
-    best = max((v for v in strong_core if v.stop is not None), key=lambda v: v.s, default=None)
-    if best is None:
+    with_stop = [v for v in strong_core if v.stop is not None]
+    if not with_stop:
         return None, "no_stop"
-    stop = best.stop
-    risk = side * (entry - stop)
-    if risk <= 0:
+    # strongest style whose stop is still on the correct side of the entry
+    valid = [v for v in with_stop if side * (entry - v.stop) > 0]
+    if not valid:
         return None, "stop_wrong_side"
+    stop = max(valid, key=lambda v: v.s).stop
+    risk = side * (entry - stop)
     if risk > 3 * atr_1h:
         return None, "stop_too_far"
     if risk < 0.5 * atr_1h:

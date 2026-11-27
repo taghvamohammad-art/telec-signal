@@ -150,6 +150,19 @@ async def api_paper_reset(request: Request) -> Response:
     return JSONResponse({"ok": True})
 
 
+async def api_backtests(request: Request) -> Response:
+    if await current_user(request) is None:
+        return _unauth()
+    return JSONResponse(await request.app.state.repo.backtests())
+
+
+async def api_backtest(request: Request) -> Response:
+    if await current_user(request) is None:
+        return _unauth()
+    run = await request.app.state.repo.backtest(int(request.path_params["run_id"]))
+    return JSONResponse(run) if run else JSONResponse({"error": "not found"}, status_code=404)
+
+
 def create_app(repo_factory=None) -> Starlette:
     @contextlib.asynccontextmanager
     async def lifespan(app: Starlette):
@@ -180,6 +193,8 @@ def create_app(repo_factory=None) -> Starlette:
         Route("/api/signals", api_signals),
         Route("/api/paper", api_paper),
         Route("/api/paper/reset", api_paper_reset, methods=["POST"]),
+        Route("/api/backtests", api_backtests),
+        Route("/api/backtests/{run_id:int}", api_backtest),
         Mount("/static", StaticFiles(directory=STATIC), name="static"),
     ]
     return Starlette(routes=routes, lifespan=lifespan)

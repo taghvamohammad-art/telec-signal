@@ -177,3 +177,12 @@ footer a { color: var(--muted); }
   .equity-head .big { font-size: 32px; }
   .stats div { min-width: 50%; border-inline-end: 0; border-bottom: 1px solid var(--line); }
 }
+
+/* ---- backtest ---- */
+.lead { font-size: 17px; margin: 0 0 14px; max-width: 70ch; }
+.small { font-size: 13px; }
+.eqbox { height: 240px; border-radius: var(--radius-m); overflow: hidden; background: var(--surface); margin-bottom: 8px; }
+.grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(440px, 1fr)); gap: 0 18px; }
+@media (max-width: 720px) { .grid-2 { grid-template-columns: 1fr; } }
+pre { background: var(--ink); border-radius: var(--radius-s); padding: 10px 12px; overflow-x: auto; text-align: left; margin: 10px 0 0; color: var(--text); }
+@media (max-width: 720px) { .tabs button { padding: 6px 4px; } }

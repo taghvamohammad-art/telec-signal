@@ -132,3 +132,27 @@ class WebRepo:
                     await con.execute("UPDATE paper_accounts SET initial_capital=$2, started_at=now() WHERE id=$1", acc["id"], capital)
                 else:
                     await con.execute("INSERT INTO paper_accounts (user_id, initial_capital) VALUES ($1,$2)", user_id, capital)
+
+    # ---- backtests ----------------------------------------------------
+    async def backtests(self) -> list[dict]:
+        async with self.s.pool.acquire() as con:
+            rows = await con.fetch("SELECT id, created_at, params, summary FROM backtest_runs ORDER BY id DESC LIMIT 20")
+        out = []
+        for r in rows:
+            s = json.loads(r["summary"]) if isinstance(r["summary"], str) else r["summary"]
+            p = json.loads(r["params"]) if isinstance(r["params"], str) else r["params"]
+            out.append({"id": r["id"], "created_at": dt_to_ms(r["created_at"]), "days": p.get("days"),
+                        "signals": s.get("signals"), "all": s.get("signal_r", {}).get("all"),
+                        "final_equity": s.get("portfolio", {}).get("final_equity"), "capital": s.get("portfolio", {}).get("capital")})
+        return out
+
+    async def backtest(self, run_id: int) -> dict | None:
+        async with self.s.pool.acquire() as con:
+            r = await con.fetchrow("SELECT * FROM backtest_runs WHERE id=$1", run_id)
+        if r is None:
+            return None
+        load = lambda v: json.loads(v) if isinstance(v, str) else v  # noqa: E731
+        signals = load(r["signals"])
+        return {"id": r["id"], "created_at": dt_to_ms(r["created_at"]), "params": load(r["params"]),
+                "summary": load(r["summary"]), "curve": load(r["curve"]),
+                "signals": sorted(signals, key=lambda x: x["bar_time"], reverse=True)[:300]}

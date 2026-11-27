@@ -2,6 +2,7 @@
 
   .venv/bin/python scripts/extend_history.py --days 400
   .venv/bin/python scripts/extend_history.py --days 2700 --tf 1d --universe all   # daily since 2019 for the trend test
+  .venv/bin/python scripts/extend_history.py --days 2200 --tf 15m --symbols BTCUSDT ETHUSDT SOLUSDT
 
 Fetches, for every symbol of today's analysis set plus BTC and every timeframe,
 the candles between (now - days) and the oldest stored candle. Safe to re-run.
@@ -30,6 +31,7 @@ async def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--days", type=int, default=400)
     ap.add_argument("--tf", nargs="*", help="only these timeframes (default: all configured)")
+    ap.add_argument("--symbols", nargs="*", help="only these symbols, e.g. BTCUSDT ETHUSDT")
     ap.add_argument("--universe", choices=("analysis", "all"), default="analysis",
                     help="analysis = today's analysis set; all = every coin of today's universe snapshot")
     a = ap.parse_args()
@@ -44,6 +46,8 @@ async def main() -> None:
             symbols = [r["symbol"] for r in await con.fetch(
                 "SELECT symbol FROM universe_snapshots WHERE day=(SELECT max(day) FROM universe_snapshots)"
                 + (" AND in_analysis" if a.universe == "analysis" else "") + " ORDER BY rank")]
+        if a.symbols:
+            symbols = [x.upper() for x in a.symbols]
         if "BTCUSDT" not in symbols:
             symbols.insert(0, "BTCUSDT")
         total = 0

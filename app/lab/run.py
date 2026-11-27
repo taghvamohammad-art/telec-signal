@@ -29,6 +29,8 @@ def _ms(day: str) -> int:
 async def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--cost", type=float, default=0.001, help="fee + slippage per unit traded")
+    ap.add_argument("--reveal", nargs="*", default=[],
+                    help="also show the holdout of these styles (declare them BEFORE running, and say why)")
     ap.add_argument("--download", action="store_true", help="also fetch missing funding history")
     a = ap.parse_args()
     cfg = load_settings()
@@ -75,10 +77,11 @@ async def main() -> None:
             dsr = deflated_sharpe(r["disc"]["ret"], n_trials, sr_var)
             s["dsr"] = round(dsr, 2) if dsr is not None else None
             passed = (s.get("sharpe") or -9) >= PASS_SHARPE and (s.get("pos_years") or 0) >= PASS_YEARS and (dsr or 0) >= PASS_DSR
-            h = summarize(r["hold"], c.btc) if passed else None
+            show = passed or key in a.reveal
+            h = summarize(r["hold"], c.btc) if show else None
             out[key] = {"label": r["label"], "discovery": s, "passed": passed, "holdout": h}
-            verdict = (f"PASS -> holdout Sharpe {h.get('sharpe')}, CAGR {h.get('cagr')}%, maxDD {h.get('max_dd')}%"
-                       if passed else "-")
+            verdict = (("PASS" if passed else "revealed") + f" -> holdout Sharpe {h.get('sharpe')}, CAGR {h.get('cagr')}%, "
+                       f"maxDD {h.get('max_dd')}%, years {h.get('yearly')}") if h else "-"
             print(f"{key:<15}{str(s.get('sharpe')):>7}{str(s.get('cagr')):>7}{str(s.get('max_dd')):>8}{str(s.get('pos_years')):>6}"
                   f"{str(s.get('dsr')):>6}{str(s.get('carry_pct_yr')):>7}{str(s.get('fees_pct_yr')):>6}{str(s.get('btc_corr')):>7}  {verdict}")
         print("\nper year % (discovery):")

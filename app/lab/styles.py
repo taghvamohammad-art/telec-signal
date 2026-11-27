@@ -108,12 +108,12 @@ def s_lowvol(c):
 
 
 def s_size(c):  # small (less traded) minus big, inside the top 100
-    return long_short(c, -np.log(c.liquid), eligible(c), rebalance=7)
+    return long_short(c, -np.log(c.liquid.where(c.liquid > 0)), eligible(c), rebalance=7)
 
 
 def s_attention(c):  # abnormal volume: 7-day vs 90-day
     ab = c.qv.rolling(7, min_periods=5).mean() / c.qv.rolling(90, min_periods=45).mean()
-    return long_short(c, np.log(ab), eligible(c), rebalance=7)
+    return long_short(c, np.log(ab.where(ab > 0)), eligible(c), rebalance=7)
 
 
 def s_bab(c):  # betting against beta (to BTC)

@@ -132,6 +132,8 @@ KINDS: dict[str, JobKind] = {k.key: k for k in [
              Param("top_n", "تعداد ارز پرحجم", "int", 50, lo=10, hi=200)), timeout_s=3 * 3600),
     JobKind("bt_lab", "آزمایشگاه سبک‌ها", "ده‌ها سبک را با قانون‌های یکسان و محافظت در برابر شانس آزمایش می‌کند.", "بک‌تست",
             timeout_s=2 * 3600),
+    JobKind("bt_lab_reveal", "آزمایشگاه: دورهٔ قفل سه نامزد", "دورهٔ ۲۰۲۵ به بعد را فقط برای سه نامزدی که از پیش اعلام شده‌اند نشان می‌دهد: "
+            "btc_ma50، tsmom_regime و tsmom_14.", "بک‌تست", timeout_s=2 * 3600),
     JobKind("whales_once", "نمونهٔ پوزیشن نهنگ‌ها", "یک بار پوزیشن نهنگ‌های Hyperliquid را می‌خواند و خلاصه می‌دهد.", "داده",
             timeout_s=600),
 ]}
@@ -183,6 +185,8 @@ def build_steps(key: str, p: dict, app_dir: str) -> list[Step]:
         return [Step(tuple(argv))]
     if key == "bt_lab":
         return [Step((PY, "-m", "app.lab.run"))]
+    if key == "bt_lab_reveal":
+        return [Step((PY, "-m", "app.lab.run", "--reveal", "btc_ma50", "tsmom_regime", "tsmom_14"))]
     if key == "whales_once":
         return [Step((PY, "-m", "app.whales.collector", "--once"))]
     raise InvalidParams("کار ناشناخته")

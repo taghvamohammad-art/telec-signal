@@ -35,14 +35,30 @@ systemctl enable --now postgresql
 
 say "TimescaleDB (optional; the app works without it)"
 if ! dpkg -s "timescaledb-2-postgresql-${PG_VER}" >/dev/null 2>&1; then
-  if curl -fsSL https://packagecloud.io/timescale/timescaledb/gpgkey | gpg --dearmor -o /etc/apt/trusted.gpg.d/timescaledb.gpg \
+  if curl -fsSL https://packagecloud.io/timescale/timescaledb/gpgkey | gpg --dearmor --yes -o /etc/apt/trusted.gpg.d/timescaledb.gpg \
      && echo "deb https://packagecloud.io/timescale/timescaledb/ubuntu/ $(lsb_release -cs) main" > /etc/apt/sources.list.d/timescaledb.list \
      && apt-get update -y && apt-get install -y "timescaledb-2-postgresql-${PG_VER}"; then
-    timescaledb-tune --quiet --yes --memory=768MB --cpus=2 || warn "timescaledb-tune failed; tune manually later"
-    systemctl restart postgresql
+    :
   else
     warn "TimescaleDB install failed; continuing with plain PostgreSQL"
     rm -f /etc/apt/sources.list.d/timescaledb.list
+  fi
+fi
+# The extension only loads if it is in shared_preload_libraries (checked on every run).
+if dpkg -s "timescaledb-2-postgresql-${PG_VER}" >/dev/null 2>&1; then
+  apt-get install -y timescaledb-tools || true   # provides timescaledb-tune
+  PRELOAD="$(sudo -u postgres psql -tAc 'SHOW shared_preload_libraries')"
+  if [[ "$PRELOAD" != *timescaledb* ]]; then
+    if command -v timescaledb-tune >/dev/null 2>&1; then
+      timescaledb-tune --quiet --yes --memory=768MB --cpus=2 \
+        --pg-config="/usr/lib/postgresql/${PG_VER}/bin/pg_config" || warn "timescaledb-tune failed"
+    fi
+    PRELOAD="$(sudo -u postgres psql -tAc 'SHOW shared_preload_libraries')"
+    if [[ "$PRELOAD" != *timescaledb* ]]; then
+      # tune did not run; edit the file directly (takes effect on restart)
+      sudo -u postgres psql -c "ALTER SYSTEM SET shared_preload_libraries = '${PRELOAD:+$PRELOAD,}timescaledb'"
+    fi
+    systemctl restart postgresql
   fi
 fi
 

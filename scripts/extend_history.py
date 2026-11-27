@@ -1,6 +1,7 @@
 """Extend stored candle history backwards (for longer backtests).
 
   .venv/bin/python scripts/extend_history.py --days 400
+  .venv/bin/python scripts/extend_history.py --days 2700 --tf 1d --universe all   # daily since 2019 for the trend test
 
 Fetches, for every symbol of today's analysis set plus BTC and every timeframe,
 the candles between (now - days) and the oldest stored candle. Safe to re-run.
@@ -28,6 +29,9 @@ DAY = 86_400_000
 async def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--days", type=int, default=400)
+    ap.add_argument("--tf", nargs="*", help="only these timeframes (default: all configured)")
+    ap.add_argument("--universe", choices=("analysis", "all"), default="analysis",
+                    help="analysis = today's analysis set; all = every coin of today's universe snapshot")
     a = ap.parse_args()
     cfg = load_settings()
     store = Store(cfg.database_url)
@@ -38,12 +42,13 @@ async def main() -> None:
     try:
         async with store.pool.acquire() as con:
             symbols = [r["symbol"] for r in await con.fetch(
-                "SELECT symbol FROM universe_snapshots WHERE day=(SELECT max(day) FROM universe_snapshots) AND in_analysis ORDER BY rank")]
+                "SELECT symbol FROM universe_snapshots WHERE day=(SELECT max(day) FROM universe_snapshots)"
+                + (" AND in_analysis" if a.universe == "analysis" else "") + " ORDER BY rank")]
         if "BTCUSDT" not in symbols:
             symbols.insert(0, "BTCUSDT")
         total = 0
         for i, sym in enumerate(symbols, 1):
-            for tf in cfg.timeframes:
+            for tf in (a.tf or cfg.timeframes):
                 async with store.pool.acquire() as con:
                     oldest = await con.fetchval("SELECT min(open_time) FROM candles WHERE symbol=$1 AND tf=$2", sym, tf)
                 end = (dt_to_ms(oldest) - tf_ms(tf)) if oldest else now

@@ -88,6 +88,7 @@ class BinanceFutures:
             if nxt <= cursor or len(rows) < 1000:
                 break
             cursor = nxt
+            await asyncio.sleep(0.7)  # this endpoint allows 500 requests per 5 minutes per IP
         return out
 
     async def open_interest(self, symbol: str) -> dict:

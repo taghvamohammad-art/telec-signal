@@ -151,6 +151,12 @@ async def api_paper_reset(request: Request) -> Response:
     return JSONResponse({"ok": True})
 
 
+async def api_portfolio(request: Request) -> Response:
+    if await current_user(request) is None:
+        return _unauth()
+    return JSONResponse(await request.app.state.repo.portfolio())
+
+
 async def api_backtests(request: Request) -> Response:
     if await current_user(request) is None:
         return _unauth()
@@ -385,6 +391,7 @@ def create_app(repo_factory=None) -> Starlette:
         Route("/api/paper", api_paper),
         Route("/api/paper/reset", api_paper_reset, methods=["POST"]),
         Route("/api/backtests", api_backtests),
+        Route("/api/portfolio", api_portfolio),
         Route("/api/custom-symbols", api_custom_list),
         Route("/api/custom-symbols", api_custom_add, methods=["POST"]),
         Route("/api/custom-symbols/{sym}", api_custom_remove, methods=["DELETE"]),

@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 PY = ".venv/bin/python"
-SERVICES = ["telec-data", "telec-analysis", "telec-web", "telec-bot", "telec-whales"]
+SERVICES = ["telec-data", "telec-analysis", "telec-web", "telec-bot", "telec-whales", "telec-portfolio"]
 RUNNER = "telec-ops"
 SYMBOL_RE = re.compile(r"^[A-Z0-9]{2,20}USDT$")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -134,6 +134,8 @@ KINDS: dict[str, JobKind] = {k.key: k for k in [
             timeout_s=2 * 3600),
     JobKind("bt_lab_reveal", "آزمایشگاه: دورهٔ قفل نامزدها", "دورهٔ ۲۰۲۵ به بعد را فقط برای نامزدهای از پیش اعلام‌شده نشان می‌دهد: "
             "سه ترکیب (combo_top، combo_trend، combo_all_pos) و btc_ma50، tsmom_regime، tsmom_14.", "بک‌تست", timeout_s=2 * 3600),
+    JobKind("portfolio_run", "اجرای پرتفوی همین حالا", "داده‌های روز را می‌گیرد و پرتفوی آزمایشی را به‌روز می‌کند (اگر امروز انجام نشده).", "داده",
+            timeout_s=3600),
     JobKind("whales_once", "نمونهٔ پوزیشن نهنگ‌ها", "یک بار پوزیشن نهنگ‌های Hyperliquid را می‌خواند و خلاصه می‌دهد.", "داده",
             timeout_s=600),
 ]}
@@ -188,6 +190,8 @@ def build_steps(key: str, p: dict, app_dir: str) -> list[Step]:
     if key == "bt_lab_reveal":
         return [Step((PY, "-m", "app.lab.run", "--reveal", "combo_top", "combo_trend", "combo_all_pos",
                       "btc_ma50", "tsmom_regime", "tsmom_14"))]
+    if key == "portfolio_run":
+        return [Step((PY, "-m", "app.portfolio.service", "--once"))]
     if key == "whales_once":
         return [Step((PY, "-m", "app.whales.collector", "--once"))]
     raise InvalidParams("کار ناشناخته")

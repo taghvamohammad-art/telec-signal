@@ -267,3 +267,20 @@ th[title] { cursor: help; text-decoration: underline dotted rgba(145,151,174,.6)
   .ops-list { max-height: 220px; }
   .console { height: 360px; }
 }
+
+/* live portfolio */
+.seg { display: inline-flex; background: var(--surface); border-radius: var(--radius-s); padding: 3px; gap: 2px; }
+.seg button { border: 0; background: transparent; padding: 6px 14px; border-radius: 4px; cursor: pointer; color: var(--muted); }
+.seg button[aria-pressed="true"] { background: var(--surface-2); color: var(--text); }
+.pf-books { display: grid; grid-template-columns: 1.3fr 1fr; gap: 14px; margin-bottom: 14px; }
+.pf-book { background: var(--surface); border-radius: var(--radius-m); padding: 16px 18px; display: grid; gap: 10px; }
+.pf-book.ideal { background: transparent; border: 1px solid var(--line); }
+.pf-book h2 { margin: 0; font-size: 14px; font-weight: 500; color: var(--muted); }
+.pf-book .big { font-size: 28px; font-weight: 700; line-height: 1.2; }
+.pf-book.ideal .big { font-size: 22px; }
+.pf-facts { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; color: var(--muted); }
+.pf-facts b { color: var(--text); font-weight: 600; }
+#pf-chart { height: 300px; }
+.tag { font-size: 12px; padding: 1px 8px; border-radius: 999px; background: var(--line); white-space: nowrap; }
+.tag.new { background: rgba(233, 180, 76, .18); color: var(--saffron); }
+@media (max-width: 720px) { .pf-books { grid-template-columns: 1fr; } #pf-chart { height: 240px; } }

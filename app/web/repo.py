@@ -70,6 +70,39 @@ class WebRepo:
             await con.execute(f"UPDATE sessions SET elevated_until=now() + interval '{ELEVATE_MIN} minutes' WHERE token=$1",
                               token_key(token))
 
+    # ---- live portfolio test ------------------------------------------
+    async def portfolio(self) -> list[dict]:
+        async with self.s.pool.acquire() as con:
+            books = await con.fetch("SELECT id, combo, mode, capital, started_day, last_day, equity FROM portfolio_books ORDER BY combo, mode")
+            out = []
+            for b in books:
+                days = await con.fetch(
+                    """SELECT day, equity, price_pnl, funding, fees, dropped, n_long, n_short, gross, net
+                       FROM portfolio_days WHERE book_id=$1 ORDER BY day""", b["id"])
+                last = await con.fetchrow(
+                    "SELECT day, positions FROM portfolio_days WHERE book_id=$1 ORDER BY day DESC LIMIT 1", b["id"])
+                prev = await con.fetchrow(
+                    "SELECT positions FROM portfolio_days WHERE book_id=$1 ORDER BY day DESC OFFSET 1 LIMIT 1", b["id"])
+                curve = [{"t": dt_to_ms(d["day"]), "equity": d["equity"]} for d in days]
+                peak, dd = 0.0, 0.0
+                for d in days:
+                    peak = max(peak, d["equity"])
+                    dd = min(dd, d["equity"] / peak - 1)
+                load = lambda v: json.loads(v) if isinstance(v, str) else (v or {})  # noqa: E731
+                pos = load(last["positions"]) if last else {}
+                before = load(prev["positions"]) if prev else {}
+                t = days[-1] if days else None
+                out.append({"combo": b["combo"], "mode": b["mode"], "capital": b["capital"], "equity": b["equity"],
+                            "started_day": b["started_day"], "last_day": b["last_day"], "days": len(days),
+                            "return_pct": (b["equity"] / b["capital"] - 1) * 100, "max_dd_pct": dd * 100,
+                            "fees": sum(d["fees"] for d in days), "funding": sum(d["funding"] for d in days),
+                            "today": dict(t) | {"day": dt_to_ms(t["day"])} if t else None,
+                            "curve": curve,
+                            "positions": sorted(({"symbol": k, "notional": v, "prev": before.get(k)} for k, v in pos.items()),
+                                                key=lambda x: -abs(x["notional"])),
+                            "closed": sorted(k for k in before if k not in pos)})
+        return out
+
     # ---- server operations --------------------------------------------
     async def ops_jobs(self, limit: int = 30) -> list[dict]:
         async with self.s.pool.acquire() as con:

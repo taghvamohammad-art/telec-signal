@@ -109,7 +109,7 @@ class AnalysisRepo:
             )
 
 
-async def run_cycle(repo: AnalysisRepo, alerts: AdminAlerter, now_ms: int, lbank=None) -> dict:
+async def run_cycle(repo: AnalysisRepo, alerts: AdminAlerter, now_ms: int, lbank=None, signals: bool = True) -> dict:
     expected = last_closed_open_time(now_ms, "15m")
     universe = await repo.analysis_universe()
     symbols = list(universe)
@@ -125,7 +125,7 @@ async def run_cycle(repo: AnalysisRepo, alerts: AdminAlerter, now_ms: int, lbank
         cand, diag = analyze(sym, frames, now_ms, funding=await repo.funding(sym), btc_ctx=btc_ctx)
         stats[f"regime:{diag.regime_1h}"] += 1
         await repo.save_state(sym, expected, diag.regime_1h, diag.bias, diag.votes, diag.result)
-        if cand is None:
+        if cand is None or not signals:  # signals off: keep market state for the chart, publish nothing
             continue
         if await repo.in_cooldown(sym):
             stats["cooldown"] += 1
@@ -161,8 +161,11 @@ async def main() -> None:
     repo = AnalysisRepo(store)
     paper = PaperService(store)
     tracker = LifecycleTracker(store)
+    # v2.1 signals showed no edge in backtests; off unless SIGNALS_V2=1 in .env
+    signals = os.environ.get("SIGNALS_V2", "0") == "1"
+    log.info("v2.1 signal publishing is %s", "ON" if signals else "OFF")
     lbank = None
-    if os.environ.get("LBANK_CHECK", "1") != "0":
+    if signals and os.environ.get("LBANK_CHECK", "1") != "0":
         from app.data.lbank import LBankFutures
 
         lbank = LBankFutures()
@@ -183,7 +186,7 @@ async def main() -> None:
             pass
         t0 = time.time()
         try:
-            stats = await run_cycle(repo, alerts, int(time.time() * 1000), lbank)
+            stats = await run_cycle(repo, alerts, int(time.time() * 1000), lbank, signals)
             log.info("cycle done in %.1fs: %s", time.time() - t0, stats)
         except Exception as exc:
             log.exception("analysis cycle failed")

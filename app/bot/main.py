@@ -158,6 +158,11 @@ class BotService:
                     await self.broadcast(con, text)
                     sent += 1
                 await con.execute("UPDATE signal_events SET sent_at=now() WHERE id=$1", e["event_id"])
+            # plain messages queued by other services (daily portfolio summary)
+            for m in await con.fetch("SELECT id, text FROM bot_outbox WHERE sent_at IS NULL AND created_at > now() - interval '2 days' ORDER BY id LIMIT 10"):
+                await self.broadcast(con, m["text"])
+                await con.execute("UPDATE bot_outbox SET sent_at=now() WHERE id=$1", m["id"])
+                sent += 1
         return sent
 
     async def notify_loop(self) -> None:

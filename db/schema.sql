@@ -304,3 +304,40 @@ CREATE TABLE IF NOT EXISTS ops_jobs (
 CREATE INDEX IF NOT EXISTS ops_jobs_status ON ops_jobs (status, id);
 -- a password re-check unlocks server operations for a short time, per session
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS elevated_until timestamptz;
+
+-- ---- live paper test of the lab combinations ------------------------
+CREATE TABLE IF NOT EXISTS portfolio_books (
+    id           serial           PRIMARY KEY,
+    combo        text             NOT NULL,
+    mode         text             NOT NULL,          -- exec (LBank, real minimums) | ideal
+    capital      double precision NOT NULL,
+    started_day  bigint           NOT NULL,          -- epoch ms of the first day
+    last_day     bigint           NOT NULL,
+    equity       double precision NOT NULL,
+    positions    jsonb            NOT NULL DEFAULT '{}',
+    created_at   timestamptz      NOT NULL DEFAULT now(),
+    updated_at   timestamptz      NOT NULL DEFAULT now(),
+    UNIQUE (combo, mode)
+);
+CREATE TABLE IF NOT EXISTS portfolio_days (
+    book_id    integer          NOT NULL REFERENCES portfolio_books(id) ON DELETE CASCADE,
+    day        timestamptz      NOT NULL,
+    equity     double precision NOT NULL,
+    price_pnl  double precision NOT NULL,
+    funding    double precision NOT NULL,
+    fees       double precision NOT NULL,
+    turnover   double precision NOT NULL,
+    dropped    integer          NOT NULL,
+    n_long     integer          NOT NULL,
+    n_short    integer          NOT NULL,
+    gross      double precision NOT NULL,
+    net        double precision NOT NULL,
+    positions  jsonb            NOT NULL DEFAULT '{}',
+    PRIMARY KEY (book_id, day)
+);
+CREATE TABLE IF NOT EXISTS bot_outbox (
+    id          serial      PRIMARY KEY,
+    text        text        NOT NULL,
+    created_at  timestamptz NOT NULL DEFAULT now(),
+    sent_at     timestamptz
+);

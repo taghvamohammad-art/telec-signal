@@ -13,9 +13,11 @@
   <nav class="tabs" role="tablist">
     <button role="tab" data-view="chart" aria-selected="true">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 19V5M4 19h16M8 15v-4M12 15V8M16 15v-6"/></svg>نمودار</button>
-    <button role="tab" data-view="signals" aria-selected="false">
+    <button role="tab" data-view="portfolio" aria-selected="false">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9v9Z"/><path d="M12 3a9 9 0 0 1 9 9h-9"/></svg>پرتفوی</button>
+    <button role="tab" data-view="signals" aria-selected="false" class="hidden">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M5 12h3l2-6 4 12 2-6h3"/></svg>سیگنال‌ها</button>
-    <button role="tab" data-view="paper" aria-selected="false">
+    <button role="tab" data-view="paper" aria-selected="false" class="hidden">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h4"/></svg>ترید مجازی</button>
     <button role="tab" data-view="backtest" aria-selected="false">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 7v5l3 2"/><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3L4 9.4"/><path d="M4 5v4.4h4.4"/></svg>بک‌تست</button>
@@ -54,6 +56,35 @@
     </div>
     <h3 class="section-title">سیگنال‌های این ارز <span class="count" id="c-count"></span></h3>
     <div class="tickets" id="c-tickets"></div>
+  </section>
+
+  <!-- live portfolio test -->
+  <section class="view" id="view-portfolio" hidden>
+    <div class="view-head">
+      <div><h1>پرتفوی آزمایشی</h1><p>ترکیب سبک‌هایی که از آزمون دورهٔ قفل رد شدند، با ۳٬۰۰۰ دلار مجازی. هر شب ساعت ۰۳:۴۰ به وقت تهران، بعد از بسته‌شدن کندل روزانه، به‌روز می‌شود.</p></div>
+      <div class="seg" id="pf-combo" role="group" aria-label="ترکیب"></div>
+    </div>
+    <div id="pf-empty" class="empty hidden"><b>پرتفوی هنوز شروع نشده.</b>اولین اجرا خودکار امشب ساعت ۰۳:۴۰ است. مدیر می‌تواند از تب «سرور» گزینهٔ «اجرای پرتفوی همین حالا» را بزند.</div>
+    <div id="pf-main" class="hidden">
+      <div class="pf-books" id="pf-books"></div>
+      <div id="pf-chart" class="eqbox"></div>
+      <div class="chart-key"><span><i style="border-color:#e9b44c"></i>اجرایی روی ال‌بانک</span><span><i style="border-color:#9197ae"></i>ایده‌آل (بدون محدودیت)</span></div>
+      <details class="glossary">
+        <summary>این پرتفوی چیست و چه انتظاری داشته باشیم؟</summary>
+        <dl>
+          <dt>چه می‌کند</dt><dd>هر روز چند سبک مستقل (روند، مومنتوم، فاندینگ و…) پیشنهاد خرید یا فروش ارزها را می‌دهند. سهم هر سبک طوری تنظیم می‌شود که ریسکشان برابر باشد. پوزیشن‌ها چند روز تا چند هفته نگه داشته می‌شوند.</dd>
+          <dt>اجرایی و ایده‌آل</dt><dd>«ایده‌آل» دقیقاً همان بک‌تست است. «اجرایی» فقط ارزهای موجود در ال‌بانک را می‌گیرد و پوزیشن‌های کوچک‌تر از حداقل سفارش را حذف می‌کند؛ یعنی همان چیزی که با ۳٬۰۰۰ دلار واقعی به دست می‌آمد. فاصلهٔ این دو نشان می‌دهد سرمایه کافی است یا نه.</dd>
+          <dt>انتظار از بک‌تست</dt><dd>در دورهٔ آزمون (۲۰۲۵ تا ۲۰۲۶) ترکیب کامل سالی حدود ۹٪ با بیشترین افت حدود ۴٪، و ترکیب منتخب حدود ۱۰٪ با افت حدود ۶٪ داشت. اینها تضمین نیست؛ هدف همین آزمون زنده این است که ببینیم در بازار واقعی هم تکرار می‌شود یا نه.</dd>
+          <dt>اهرم کل</dt><dd>جمع اندازهٔ همهٔ پوزیشن‌ها تقسیم بر موجودی. ۱x یعنی کل پوزیشن‌ها برابر موجودی است.</dd>
+        </dl>
+      </details>
+      <h3 class="section-title">پوزیشن‌های فعلی (اجرایی) <span class="count" id="pf-count"></span></h3>
+      <p class="muted small" id="pf-note"></p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>ارز</th><th>جهت</th><th>اندازه (دلار)</th><th>سهم از موجودی</th><th>نسبت به دیروز</th></tr></thead>
+        <tbody id="pf-pos"></tbody>
+      </table></div>
+    </div>
   </section>
 
   <!-- signals -->

@@ -389,6 +389,73 @@ async function openTelegram() {
 }
 
 
+
+// ---- live portfolio test -------------------------------------------------
+const COMBO_FA = { combo_all_pos: 'ترکیب کامل (۱۸ سبک)', combo_top: 'ترکیب منتخب (۶ سبک)' };
+const pf = { data: [], combo: 'combo_all_pos', chart: null, exec: null, ideal: null };
+
+function initPortfolioChart() {
+  pf.chart = LightweightCharts.createChart($('#pf-chart'), {
+    layout: { background: { color: C.surface }, textColor: C.muted, fontFamily: 'Vazirmatn, Tahoma, sans-serif' },
+    grid: { vertLines: { visible: false }, horzLines: { color: 'rgba(44,53,86,.45)' } },
+    rightPriceScale: { borderVisible: false }, timeScale: { borderVisible: false },
+  });
+  pf.ideal = pf.chart.addLineSeries({ color: C.muted, lineWidth: 1, lineStyle: 2 });
+  pf.exec = pf.chart.addAreaSeries({ lineColor: C.saffron, topColor: 'rgba(233,180,76,.25)', bottomColor: 'rgba(233,180,76,0)', lineWidth: 2 });
+  new ResizeObserver(() => pf.chart.applyOptions({ width: $('#pf-chart').clientWidth, height: $('#pf-chart').clientHeight })).observe($('#pf-chart'));
+}
+
+async function loadPortfolio() {
+  pf.data = await api('/api/portfolio');
+  $('#pf-empty').classList.toggle('hidden', pf.data.length > 0);
+  $('#pf-main').classList.toggle('hidden', pf.data.length === 0);
+  const combos = [...new Set(pf.data.map((b) => b.combo))];
+  if (!combos.includes(pf.combo) && combos.length) pf.combo = combos[0];
+  $('#pf-combo').innerHTML = combos.map((c) => `<button type="button" data-combo="${esc(c)}" aria-pressed="${c === pf.combo}">${esc(COMBO_FA[c] || c)}</button>`).join('');
+  renderPortfolio();
+}
+
+function bookCard(b, label) {
+  if (!b) return `<div class="pf-book ideal"><h2>${label}</h2><p class="muted">هنوز اجرا نشده</p></div>`;
+  const diff = b.equity - b.capital, t = b.today || {};
+  return `<div class="pf-book ${b.mode}"><h2>${label}</h2>
+    <div><span class="big num">${money(b.equity)}</span> <span class="muted">USDT</span></div>
+    <div class="pf-facts">
+      <span class="${diff >= 0 ? 'pos' : 'neg'} num">${money(diff, true)} (${fr(b.return_pct)}%)</span>
+      <span>بیشترین افت <b class="num">${Number(b.max_dd_pct).toFixed(2)}%</b></span>
+      <span><b class="num">${b.days}</b> روز</span>
+      ${b.mode === 'exec' ? `<span><b class="num">${t.n_long ?? 0}</b> خرید، <b class="num">${t.n_short ?? 0}</b> فروش</span>
+      <span>اهرم کل <b class="num">${Number(t.gross ?? 0).toFixed(2)}x</b></span>` : ''}
+    </div></div>`;
+}
+
+function renderPortfolio() {
+  const exec = pf.data.find((b) => b.combo === pf.combo && b.mode === 'exec');
+  const ideal = pf.data.find((b) => b.combo === pf.combo && b.mode === 'ideal');
+  $('#pf-books').innerHTML = bookCard(exec, 'اجرایی روی ال‌بانک (۳٬۰۰۰ دلار)') + bookCard(ideal, 'ایده‌آل، مثل بک‌تست');
+  const pts = (b) => (b ? b.curve.map((p) => ({ time: Math.floor(p.t / 1000), value: p.equity })) : []);
+  pf.exec.setData(pts(exec)); pf.ideal.setData(pts(ideal)); pf.chart.timeScale().fitContent();
+  const book = exec || ideal;
+  const eq = book ? book.equity : 1;
+  $('#pf-count').textContent = book ? book.positions.length : '';
+  const t = exec && exec.today;
+  $('#pf-note').textContent = book ? [
+    `آخرین به‌روزرسانی: ${when(book.last_day + 86400000)}`,
+    t && t.dropped ? `${t.dropped} پوزیشن پیشنهادی به خاطر نبودن در ال‌بانک یا کوچک‌تر بودن از حداقل سفارش حذف شد` : '',
+    book.closed.length ? `امروز بسته شد: ${book.closed.map((s) => s.replace('USDT', '')).join('، ')}` : '',
+  ].filter(Boolean).join(' · ') : '';
+  $('#pf-pos').innerHTML = book && book.positions.length ? book.positions.map((p) => {
+    const side = p.notional > 0 ? 1 : -1;
+    let chg = '<span class="muted">—</span>';
+    if (p.prev == null) chg = '<span class="tag new">جدید</span>';
+    else if ((p.prev > 0) !== (p.notional > 0)) chg = '<span class="tag new">تغییر جهت</span>';
+    else chg = `<span class="num">${fr(Math.abs(p.notional) - Math.abs(p.prev))}</span>`;
+    return `<tr><td><bdi>${esc(p.symbol.replace('USDT', ''))}</bdi></td>
+      <td class="${sideCls(side)}">${sideFa(side)}</td><td class="num">${money(Math.abs(p.notional))}</td>
+      <td class="num">${((Math.abs(p.notional) / eq) * 100).toFixed(1)}%</td><td>${chg}</td></tr>`;
+  }).join('') : '<tr><td colspan="5" class="muted">پوزیشن بازی نیست.</td></tr>';
+}
+
 // ---- server operations (admin) --------------------------------------------
 const OPS_STATUS = { queued: 'در صف', running: 'در حال اجرا', done: 'تمام شد', failed: 'خطا', cancelled: 'لغو شد' };
 const ops = { kinds: [], kind: null, job: null, timer: null };
@@ -538,6 +605,7 @@ function showView(name) {
   if (name === 'paper') loadPaper().catch(showError);
   if (name === 'backtest') loadBacktests().catch(showError);
   if (name === 'ops') loadOps().catch(showError);
+  if (name === 'portfolio') loadPortfolio().catch(showError);
   if (name !== 'ops') clearTimeout(ops.timer);
 }
 
@@ -573,10 +641,12 @@ function bind() {
   });
   window.addEventListener('hashchange', () => {
     const v = location.hash.slice(1);
-    if (['chart', 'signals', 'paper', 'backtest', 'ops'].includes(v)) showView(v);
+    if (['chart', 'portfolio', 'signals', 'paper', 'backtest', 'ops'].includes(v)) showView(v);
   });
   bindCustom();
   bindOps();
+  $('#pf-combo').addEventListener('click', (e) => { const b = e.target.closest('[data-combo]'); if (!b) return; pf.combo = b.dataset.combo;
+    document.querySelectorAll('#pf-combo button').forEach((x) => x.setAttribute('aria-pressed', x === b)); renderPortfolio(); });
   rememberGlossary();
   $('#tg-open').addEventListener('click', () => openTelegram().catch(showError));
   $('#logout').addEventListener('click', async () => { await api('/api/logout', { method: 'POST' }); location.href = '/login'; });
@@ -587,6 +657,7 @@ async function main() {
   initChart();
   initEquity();
   initBacktestChart();
+  initPortfolioChart();
   const me = await api('/api/me');
   $('#who').textContent = me.username;
   $('#cx-open').classList.toggle('hidden', !me.is_admin);
@@ -594,8 +665,8 @@ async function main() {
   state.symbols = await api('/api/symbols');
   state.symbol = state.symbols.length ? state.symbols[0].symbol : null;
   renderChips();
-  const start = (location.hash || '#chart').slice(1);
-  showView(['chart', 'signals', 'paper', 'backtest', ...(me.is_admin ? ['ops'] : [])].includes(start) ? start : 'chart');
+  const start = (location.hash || '#portfolio').slice(1);
+  showView(['chart', 'portfolio', 'signals', 'paper', 'backtest', ...(me.is_admin ? ['ops'] : [])].includes(start) ? start : 'portfolio');
   if (start !== 'chart') loadChart().catch(showError);
   // refresh the visible view every minute (candles close every 15 minutes, marks every 5)
   setInterval(() => {

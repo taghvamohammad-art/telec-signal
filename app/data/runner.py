@@ -41,6 +41,7 @@ class DataEngine:
         self.stream: KlineStream | None = None
         self._stream_task: asyncio.Task | None = None
         self._stop = asyncio.Event()
+        self.on_started = lambda: None
 
     # ---- lifecycle -----------------------------------------------------
     async def start(self) -> None:
@@ -175,6 +176,7 @@ class DataEngine:
 
     async def run_forever(self) -> None:
         await self.start()
+        self.on_started()
         jobs = [
             asyncio.create_task(self._every(3600, self.backfill_all, "hourly_backfill")),
             asyncio.create_task(self._every(24 * 3600, self._daily_universe, "daily_universe")),
@@ -194,11 +196,24 @@ async def main() -> None:
     cfg = load_settings()
     logging.basicConfig(level=cfg.log_level, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     engine = DataEngine(cfg)
+    task = asyncio.create_task(engine.run_forever())
+    started = asyncio.Event()
+
+    def on_signal() -> None:
+        # Once running, stop cleanly; during startup (DB retries, backfill) cancel at once.
+        engine.request_stop()
+        if not started.is_set():
+            task.cancel()
+
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, engine.request_stop)
+        loop.add_signal_handler(sig, on_signal)
+    engine.on_started = started.set
     try:
-        await engine.run_forever()
+        await task
+    except asyncio.CancelledError:
+        log.info("stopped during startup")
+        await engine.shutdown()
     except RegionBlocked as exc:
         log.critical("%s", exc)
         await engine.alerts.send("region", str(exc), force=True)

@@ -13,6 +13,7 @@ EnvironmentFile=__APP_DIR__/.env
 ExecStart=__APP_DIR__/.venv/bin/python -m app.data.runner
 Restart=always
 RestartSec=10
+TimeoutStopSec=20
 # Exit code 2 = Binance blocked this server's region; restarting will not help
 RestartPreventExitStatus=2
 MemoryMax=700M

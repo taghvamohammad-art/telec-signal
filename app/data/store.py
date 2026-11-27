@@ -27,10 +27,21 @@ class Store:
         self._dsn = dsn
         self.pool = None
 
-    async def connect(self) -> None:
+    async def connect(self, attempts: int = 30, delay_s: float = 2.0) -> None:
+        """Retry while PostgreSQL is still starting (e.g. right after a restart)."""
+        import asyncio
+
         import asyncpg  # lazy: tests import this module without asyncpg
 
-        self.pool = await asyncpg.create_pool(self._dsn, min_size=1, max_size=5, command_timeout=60)
+        for i in range(1, attempts + 1):
+            try:
+                self.pool = await asyncpg.create_pool(self._dsn, min_size=1, max_size=5, command_timeout=60)
+                return
+            except (OSError, asyncpg.CannotConnectNowError) as exc:
+                if i == attempts:
+                    raise RuntimeError(f"PostgreSQL unreachable after {attempts} attempts: {exc}") from exc
+                log.warning("database not ready (%s), retry %d/%d", exc, i, attempts)
+                await asyncio.sleep(delay_s)
 
     async def close(self) -> None:
         if self.pool:

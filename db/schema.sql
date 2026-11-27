@@ -80,3 +80,41 @@ BEGIN
         END;
     END IF;
 END $$;
+
+-- ---- step 2: analysis --------------------------------------------------
+-- Every signal that passed the analysis engine. Step 3 (risk/LBank) and
+-- step 4 (lifecycle/Telegram) take candidates from here.
+CREATE TABLE IF NOT EXISTS signal_candidates (
+    id          bigserial        PRIMARY KEY,
+    created_at  timestamptz      NOT NULL DEFAULT now(),
+    bar_time    timestamptz      NOT NULL,          -- open time of the 15m bar that triggered it
+    symbol      text             NOT NULL,
+    side        smallint         NOT NULL,          -- 1 long, -1 short
+    score       double precision NOT NULL,
+    regime_1h   text             NOT NULL,
+    bias_4h     smallint         NOT NULL,
+    entry       double precision NOT NULL,
+    stop        double precision NOT NULL,
+    tp1         double precision NOT NULL,
+    tp2         double precision NOT NULL,
+    risk        double precision NOT NULL,
+    f_market    double precision NOT NULL,
+    f_news      double precision NOT NULL,
+    styles      jsonb            NOT NULL,
+    notes       jsonb            NOT NULL DEFAULT '[]',
+    version     text             NOT NULL,
+    status      text             NOT NULL DEFAULT 'new',
+    UNIQUE (symbol, bar_time)
+);
+CREATE INDEX IF NOT EXISTS signal_candidates_created_idx ON signal_candidates (created_at DESC);
+
+-- Latest analysis per symbol (for the panel and for debugging "why no signal").
+CREATE TABLE IF NOT EXISTS analysis_state (
+    symbol      text        PRIMARY KEY,
+    updated_at  timestamptz NOT NULL,
+    bar_time    timestamptz NOT NULL,
+    regime_1h   text        NOT NULL,
+    bias_4h     smallint    NOT NULL,
+    votes       jsonb       NOT NULL,
+    result      text        NOT NULL
+);

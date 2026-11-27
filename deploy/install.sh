@@ -123,12 +123,19 @@ say "Unit tests"
 say "Connectivity check"
 (cd "$APP_DIR" && .venv/bin/python scripts/check_connectivity.py) || warn "fix connectivity before relying on the engine"
 
-say "systemd service"
-sed "s#__APP_DIR__#${APP_DIR}#g" "$APP_DIR/deploy/telec-data.service" > /etc/systemd/system/telec-data.service
+say "systemd services"
+SERVICES=(telec-data telec-analysis)
+for svc in "${SERVICES[@]}"; do
+  sed "s#__APP_DIR__#${APP_DIR}#g" "$APP_DIR/deploy/${svc}.service" > "/etc/systemd/system/${svc}.service"
+done
 systemctl daemon-reload
-systemctl enable telec-data.service
-systemctl restart telec-data.service
+for svc in "${SERVICES[@]}"; do
+  systemctl enable "${svc}.service"
+  systemctl restart "${svc}.service"
+done
 sleep 3
-systemctl --no-pager --lines=15 status telec-data.service || true
+for svc in "${SERVICES[@]}"; do
+  systemctl --no-pager --lines=5 status "${svc}.service" || true
+done
 
-say "Done. Logs: journalctl -u telec-data -f"
+say "Done. Logs: journalctl -u telec-data -f   |   journalctl -u telec-analysis -f"

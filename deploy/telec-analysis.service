@@ -1,0 +1,23 @@
+[Unit]
+Description=telec-signal analysis engine
+After=network-online.target postgresql.service
+Wants=network-online.target
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=telec
+Group=telec
+WorkingDirectory=__APP_DIR__
+EnvironmentFile=__APP_DIR__/.env
+ExecStart=__APP_DIR__/.venv/bin/python -m app.analysis.engine
+Restart=always
+RestartSec=10
+TimeoutStopSec=20
+MemoryMax=400M
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

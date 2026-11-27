@@ -73,6 +73,10 @@ function ticket(sig, { price = null, extra = '', clickable = false } = {}) {
       ${(sig.notes || []).map((n) => `<span>${esc(n)}</span>`).join('')}
     </div>
     ${why ? `<ul class="t-why">${why}</ul>` : ''}
+    ${sig.lbank_entry != null ? `<div class="t-lbank"><span>قیمت‌ها در ال‌بانک</span>
+      <span>ورود <b class="num">${fp(sig.lbank_entry)}</b></span><span>حد ضرر <b class="num">${fp(sig.lbank_stop, sig.lbank_entry)}</b></span>
+      <span>TP1 <b class="num">${fp(sig.lbank_tp1, sig.lbank_entry)}</b></span><span>TP2 <b class="num">${fp(sig.lbank_tp2, sig.lbank_entry)}</b></span>
+      <span class="muted">اختلاف با بایننس <b class="num">${sig.lbank_diff_pct > 0 ? '+' : ''}${sig.lbank_diff_pct}%</b></span></div>` : ''}
     ${extra}
   </article>`;
 }

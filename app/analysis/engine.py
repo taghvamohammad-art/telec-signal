@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import signal
 import time
 from collections import Counter
@@ -17,6 +18,7 @@ import pandas as pd
 
 from app.alerts import AdminAlerter
 from app.analysis.analyzer import analyze, btc_context_from_raw
+from app.analysis.lbank_check import LBankResult, check_on_lbank
 from app.analysis.scoring import VERSION, Candidate
 from app.config import load_settings
 from app.core.timeframes import last_closed_open_time, tf_ms
@@ -35,11 +37,16 @@ class AnalysisRepo:
         self.s = store
 
     async def analysis_set(self) -> list[str]:
+        return list(await self.analysis_universe())
+
+    async def analysis_universe(self) -> dict[str, dict]:
+        """symbol -> {lbank_symbol, multiplier} for today's analysis set."""
         async with self.s.pool.acquire() as con:
             rows = await con.fetch(
-                "SELECT symbol FROM universe_snapshots WHERE day=(SELECT max(day) FROM universe_snapshots) AND in_analysis ORDER BY rank"
+                """SELECT symbol, lbank_symbol, multiplier FROM universe_snapshots
+                   WHERE day=(SELECT max(day) FROM universe_snapshots) AND in_analysis ORDER BY rank"""
             )
-        return [r["symbol"] for r in rows]
+        return {r["symbol"]: {"lbank_symbol": r["lbank_symbol"], "multiplier": r["multiplier"]} for r in rows}
 
     async def frame(self, symbol: str, tf: str, limit: int) -> pd.DataFrame:
         async with self.s.pool.acquire() as con:
@@ -68,17 +75,22 @@ class AnalysisRepo:
                 symbol, COOLDOWN_H,
             ))
 
-    async def save_candidate(self, c: Candidate, bar_ms: int, regime: str, bias: int) -> bool:
+    async def save_candidate(self, c: Candidate, bar_ms: int, regime: str, bias: int, lb: LBankResult | None = None) -> bool:
+        lb = lb or LBankResult(False, "skipped")
         async with self.s.pool.acquire() as con:
             res = await con.execute(
                 """INSERT INTO signal_candidates
                    (bar_time, symbol, side, score, regime_1h, bias_4h, entry, stop, tp1, tp2, risk,
-                    f_market, f_news, styles, notes, version)
-                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb,$15::jsonb,$16)
+                    f_market, f_news, styles, notes, version,
+                    lbank_symbol, lbank_price, lbank_diff_pct, lbank_spread_pct, lbank_depth_usdt,
+                    lbank_entry, lbank_stop, lbank_tp1, lbank_tp2)
+                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb,$15::jsonb,$16,
+                           $17,$18,$19,$20,$21,$22,$23,$24,$25)
                    ON CONFLICT (symbol, bar_time) DO NOTHING""",
                 ms_to_dt(bar_ms), c.symbol, c.side, c.score, regime, bias, c.entry, c.stop, c.tp1, c.tp2, c.risk,
                 c.f_market, c.f_news, json.dumps([asdict(v) for v in c.votes], ensure_ascii=False),
                 json.dumps(c.notes, ensure_ascii=False), VERSION,
+                lb.symbol, lb.price, lb.diff_pct, lb.spread_pct, lb.depth_usdt, lb.entry, lb.stop, lb.tp1, lb.tp2,
             )
         return res.endswith("1")
 
@@ -93,9 +105,10 @@ class AnalysisRepo:
             )
 
 
-async def run_cycle(repo: AnalysisRepo, alerts: AdminAlerter, now_ms: int) -> dict:
+async def run_cycle(repo: AnalysisRepo, alerts: AdminAlerter, now_ms: int, lbank=None) -> dict:
     expected = last_closed_open_time(now_ms, "15m")
-    symbols = await repo.analysis_set()
+    universe = await repo.analysis_universe()
+    symbols = list(universe)
     btc = await repo.frames("BTCUSDT")
     btc_ctx = btc_context_from_raw(btc, now_ms)
     stats: Counter = Counter()
@@ -113,7 +126,19 @@ async def run_cycle(repo: AnalysisRepo, alerts: AdminAlerter, now_ms: int) -> di
         if await repo.in_cooldown(sym):
             stats["cooldown"] += 1
             continue
-        if await repo.save_candidate(cand, expected, diag.regime_1h, diag.bias):
+        lb = None
+        if lbank is not None:
+            u = universe.get(sym, {})
+            lb = await check_on_lbank(lbank, u.get("lbank_symbol"), cand.entry, u.get("multiplier") or 1,
+                                      cand.side, cand.entry, cand.stop, cand.tp1, cand.tp2)
+            if not lb.ok and lb.reason != "lbank_unavailable":
+                stats[lb.reason] += 1
+                await repo.save_state(sym, expected, diag.regime_1h, diag.bias, diag.votes, lb.reason)
+                log.info("REJECTED %s on LBank: %s (diff=%s%% spread=%s%% depth=%s)", sym, lb.reason, lb.diff_pct, lb.spread_pct, lb.depth_usdt)
+                continue
+            if not lb.ok:
+                cand.notes.append("قیمت ال‌بانک در دسترس نبود؛ سطوح بر اساس بایننس است")
+        if await repo.save_candidate(cand, expected, diag.regime_1h, diag.bias, lb if lb and lb.ok else None):
             stats["candidates"] += 1
             log.info("CANDIDATE %s %s score=%.1f entry=%g stop=%g styles=%s", sym,
                      "LONG" if cand.side > 0 else "SHORT", cand.score, cand.entry, cand.stop,
@@ -131,6 +156,11 @@ async def main() -> None:
     await store.apply_schema()
     repo = AnalysisRepo(store)
     paper = PaperService(store)
+    lbank = None
+    if os.environ.get("LBANK_CHECK", "1") != "0":
+        from app.data.lbank import LBankFutures
+
+        lbank = LBankFutures()
     alerts = AdminAlerter(cfg.admin_bot_token, cfg.admin_chat_id)
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
@@ -148,7 +178,7 @@ async def main() -> None:
             pass
         t0 = time.time()
         try:
-            stats = await run_cycle(repo, alerts, int(time.time() * 1000))
+            stats = await run_cycle(repo, alerts, int(time.time() * 1000), lbank)
             log.info("cycle done in %.1fs: %s", time.time() - t0, stats)
         except Exception as exc:
             log.exception("analysis cycle failed")
@@ -158,6 +188,8 @@ async def main() -> None:
         except Exception as exc:
             log.exception("paper tick failed")
             await alerts.send("paper_error", f"خطا در ترید مجازی: {exc}")
+    if lbank:
+        await lbank.close()
     await store.close()
 
 

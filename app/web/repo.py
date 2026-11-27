@@ -74,6 +74,7 @@ class WebRepo:
             rows = await con.fetch(
                 """SELECT c.id, c.created_at, c.bar_time, c.symbol, c.side, c.score, c.regime_1h, c.bias_4h,
                           c.entry, c.stop, c.tp1, c.tp2, c.risk, c.f_market, c.styles, c.notes,
+                          c.lbank_symbol, c.lbank_diff_pct, c.lbank_entry, c.lbank_stop, c.lbank_tp1, c.lbank_tp2,
                           p.status AS paper_status, p.exit_reason AS paper_exit, p.realized AS paper_pnl,
                           p.skip_reason AS paper_skip, p.closed_at AS paper_closed_at, p.entry AS paper_entry
                    FROM signal_candidates c

@@ -27,3 +27,10 @@ class LBankFutures:
 
     async def order_book(self, unified_symbol: str, limit: int = 50) -> dict:
         return await self._ex.fetch_order_book(unified_symbol, limit)
+
+    async def contract_size(self, unified_symbol: str) -> float:
+        """Base units per contract (order-book amounts may be in contracts)."""
+        if not self._ex.markets:
+            await self._ex.load_markets()
+        m = self._ex.markets.get(unified_symbol) or {}
+        return float(m.get("contractSize") or 1.0)

@@ -190,3 +190,14 @@ CREATE TABLE IF NOT EXISTS backtest_runs (
     signals     jsonb       NOT NULL,
     trades      jsonb       NOT NULL
 );
+
+-- ---- LBank translation of each signal ---------------------------------
+ALTER TABLE signal_candidates ADD COLUMN IF NOT EXISTS lbank_symbol     text;
+ALTER TABLE signal_candidates ADD COLUMN IF NOT EXISTS lbank_price      double precision;
+ALTER TABLE signal_candidates ADD COLUMN IF NOT EXISTS lbank_diff_pct   double precision;
+ALTER TABLE signal_candidates ADD COLUMN IF NOT EXISTS lbank_spread_pct double precision;
+ALTER TABLE signal_candidates ADD COLUMN IF NOT EXISTS lbank_depth_usdt double precision;
+ALTER TABLE signal_candidates ADD COLUMN IF NOT EXISTS lbank_entry      double precision;
+ALTER TABLE signal_candidates ADD COLUMN IF NOT EXISTS lbank_stop       double precision;
+ALTER TABLE signal_candidates ADD COLUMN IF NOT EXISTS lbank_tp1        double precision;
+ALTER TABLE signal_candidates ADD COLUMN IF NOT EXISTS lbank_tp2        double precision;

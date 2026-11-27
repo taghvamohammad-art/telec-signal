@@ -24,6 +24,14 @@ say "System packages"
 apt-get update -y
 apt-get install -y python3-venv python3-pip curl gnupg lsb-release git ca-certificates postgresql-common
 
+# The unversioned "postgresql"/"postgresql-contrib" metapackages follow the newest major
+# version once the PGDG repo is added (they pulled in PostgreSQL 19 and moved 16 to port 5433).
+# Pin to postgresql-16 explicitly and drop the metapackages.
+if dpkg -s postgresql >/dev/null 2>&1 || dpkg -s postgresql-contrib >/dev/null 2>&1; then
+  apt-mark manual "postgresql-${PG_VER}" "postgresql-client-${PG_VER}" 2>/dev/null || true
+  apt-get remove -y postgresql postgresql-contrib || true
+fi
+
 # Official PostgreSQL repo: Ubuntu's own build often lags the minor version TimescaleDB requires.
 if ! grep -rqs apt.postgresql.org /etc/apt/sources.list.d/; then
   say "Adding PostgreSQL (PGDG) apt repository"
@@ -32,6 +40,12 @@ fi
 apt-get update -y
 apt-get install -y "postgresql-${PG_VER}" "postgresql-client-${PG_VER}"
 systemctl enable --now postgresql
+PORT16="$(pg_conftool "${PG_VER}" main show port 2>/dev/null | grep -oE '[0-9]+$' || true)"
+if [[ "$PORT16" != "5432" ]]; then
+  pg_lsclusters || true
+  echo "PostgreSQL ${PG_VER}/main is on port '${PORT16}', expected 5432. Fix the clusters (see README) and re-run."
+  exit 1
+fi
 
 say "TimescaleDB (optional; the app works without it)"
 if ! dpkg -s "timescaledb-2-postgresql-${PG_VER}" >/dev/null 2>&1; then

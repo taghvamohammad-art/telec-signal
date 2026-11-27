@@ -30,7 +30,10 @@
 <main>
   <!-- chart -->
   <section class="view" id="view-chart">
-    <div class="chips" id="chips" aria-label="ارزها"></div>
+    <div class="chips-row">
+      <div class="chips" id="chips" aria-label="ارزها"></div>
+      <button class="chip add hidden" id="cx-open" title="افزودن ارز دلخواه" aria-label="افزودن ارز دلخواه">+</button>
+    </div>
     <div class="chart-bar">
       <div class="chart-title"><h2 id="c-symbol">…</h2><span class="muted" id="c-regime"></span></div>
       <div class="tf" id="tf">
@@ -124,6 +127,19 @@
     </div>
   </section>
 </main>
+<dialog id="cx-dialog" aria-labelledby="cx-title">
+  <div class="dlg">
+    <h2 id="cx-title">ارزهای دلخواه</h2>
+    <p class="muted">این ارزها علاوه بر ارزهای پرحجم تحلیل می‌شوند و برای همه کاربران نمایش داده می‌شوند. حداکثر ۱۵ ارز.</p>
+    <form id="cx-form" class="cx-add">
+      <input class="field" name="symbol" placeholder="مثلاً WIF یا PEPE" autocomplete="off" dir="ltr" aria-label="نماد ارز">
+      <button class="btn" type="submit">افزودن</button>
+    </form>
+    <p class="form-error" id="cx-err" role="alert"></p>
+    <ul class="cx-list" id="cx-list"></ul>
+    <div class="dlg-actions"><button class="btn quiet" type="button" id="cx-close">بستن</button></div>
+  </div>
+</dialog>
 <dialog id="tg-dialog" aria-labelledby="tg-title">
   <form method="dialog" class="dlg">
     <h2 id="tg-title">اعلان‌های تلگرام</h2>

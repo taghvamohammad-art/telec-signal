@@ -108,6 +108,17 @@ class Store:
                     rows,
                 )
 
+    # ---- admin-added coins ---------------------------------------------
+    async def custom_inputs(self) -> list[str]:
+        async with self.pool.acquire() as con:
+            return [r["input"] for r in await con.fetch("SELECT input FROM custom_symbols ORDER BY added_at")]
+
+    async def set_custom_status(self, status: dict) -> None:
+        async with self.pool.acquire() as con:
+            for inp, (st, sym, note) in status.items():
+                await con.execute(
+                    "UPDATE custom_symbols SET status=$2, symbol=$3, note=$4, checked_at=now() WHERE input=$1", inp, st, sym, note)
+
     # ---- derivatives data ---------------------------------------------
     async def save_funding(self, rows: list[tuple[str, int, float, float]]) -> None:
         """rows: (symbol, ts_ms, rate, mark_price)"""

@@ -21,7 +21,7 @@ from app.data.candles import clean_batch
 from app.data.lbank import LBankFutures
 from app.data.store import Store
 from app.data.stream import KlineStream
-from app.data.universe import binance_candidates, build_universe, lbank_index, select_analysis_set
+from app.data.universe import add_custom, binance_candidates, build_universe, lbank_index, select_analysis_set
 
 log = logging.getLogger("telec.data")
 
@@ -41,6 +41,7 @@ class DataEngine:
         self.stream: KlineStream | None = None
         self._stream_task: asyncio.Task | None = None
         self._stop = asyncio.Event()
+        self._custom_seen: set[str] = set()
         self.on_started = lambda: None
 
     # ---- lifecycle -----------------------------------------------------
@@ -68,13 +69,18 @@ class DataEngine:
         """Returns True when the analysis set changed."""
         info, tickers = await asyncio.gather(self.binance.exchange_info(), self.binance.tickers_24h())
         lb_markets = await self.lbank.swap_markets() if self.lbank else {}
-        universe = build_universe(
-            binance_candidates(info, tickers), lbank_index(lb_markets), self.cfg.universe_size, self.cfg.require_lbank
-        )
+        cands, lb_idx = binance_candidates(info, tickers), lbank_index(lb_markets)
+        universe = build_universe(cands, lb_idx, self.cfg.universe_size, self.cfg.require_lbank)
         if not universe:
             await self.alerts.send("universe_empty", "فهرست ارزها خالی شد؛ اتصال بایننس/ال‌بانک را بررسی کنید")
             return False
         analysis = select_analysis_set(universe, self.cfg.analysis_size, self.cfg.always_include, self.cfg.selection_volatility_weight)
+        # coins added by the admin are analyzed in addition to the automatic set
+        inputs = await self.store.custom_inputs()
+        self._custom_seen = set(inputs)
+        universe, custom, status = add_custom(universe, cands, lb_idx, inputs)
+        analysis += [c for c in custom if c not in analysis]
+        await self.store.set_custom_status(status)
         await self.store.save_universe(datetime.now(timezone.utc).date(), universe, analysis)
         changed = set(analysis) != set(self.analysis)
         self.analysis = analysis
@@ -163,6 +169,15 @@ class DataEngine:
             await self.backfill_all()
             self._restart_stream()
 
+    async def _check_custom(self) -> None:
+        """Pick up coins the admin added or removed in the panel."""
+        if set(await self.store.custom_inputs()) == self._custom_seen:
+            return
+        log.info("custom coin list changed")
+        if await self.refresh_universe():
+            await self.backfill_all()
+            self._restart_stream()
+
     async def _health(self) -> None:
         if not self.stream:
             return
@@ -182,6 +197,7 @@ class DataEngine:
             asyncio.create_task(self._every(24 * 3600, self._daily_universe, "daily_universe")),
             asyncio.create_task(self._every(300, self.poll_derivatives, "derivatives")),
             asyncio.create_task(self._every(120, self._health, "health")),
+            asyncio.create_task(self._every(120, self._check_custom, "custom_coins")),
         ]
         await self._stop.wait()
         for j in jobs:

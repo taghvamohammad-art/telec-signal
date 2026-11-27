@@ -317,6 +317,42 @@ async function loadBacktest(id) {
   $('#b-caveats').textContent = 'محدودیت‌ها: فهرست ارزها همان فهرست امروز است (ارزهایی که از فهرست خارج شده‌اند در آزمون نیستند)؛ قیمت‌ها از بایننس است؛ اگر یک کندل ۱۵ دقیقه‌ای هم حد ضرر و هم هدف را لمس کند، ضرر فرض شده است.';
 }
 
+// ---- custom coins (admin) -----------------------------------------------
+const CX_STATUS = { pending: 'در حال افزودن', active: 'فعال', invalid: 'نامعتبر' };
+async function loadCustom() {
+  const list = await api('/api/custom-symbols');
+  $('#cx-list').innerHTML = list.length ? list.map((c) => `<li>
+      <b class="num">${esc(c.symbol || c.input)}</b>
+      <span class="st ${esc(c.status)}">${CX_STATUS[c.status] || c.status}</span>
+      <small>${esc(c.note || (c.status === 'pending' ? 'تا ۲ دقیقه دیگر بررسی می‌شود' : ''))}</small>
+      <button type="button" data-input="${esc(c.input)}" aria-label="حذف ${esc(c.input)}">×</button></li>`).join('')
+    : '<li class="muted">هنوز ارزی اضافه نشده.</li>';
+}
+function bindCustom() {
+  const dlg = $('#cx-dialog');
+  $('#cx-open').addEventListener('click', () => { $('#cx-err').textContent = ''; dlg.showModal(); loadCustom().catch(showError); });
+  $('#cx-close').addEventListener('click', () => { dlg.close(); refreshSymbols().catch(showError); });
+  $('#cx-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const input = e.target.symbol;
+    $('#cx-err').textContent = '';
+    try {
+      await api('/api/custom-symbols', { method: 'POST', body: JSON.stringify({ symbol: input.value }) });
+      input.value = '';
+      await loadCustom();
+    } catch (x) { $('#cx-err').textContent = x.message; }
+  });
+  $('#cx-list').addEventListener('click', async (e) => {
+    const b = e.target.closest('button[data-input]'); if (!b) return;
+    await api(`/api/custom-symbols/${encodeURIComponent(b.dataset.input)}`, { method: 'DELETE' });
+    await loadCustom();
+  });
+}
+async function refreshSymbols() {
+  state.symbols = await api('/api/symbols');
+  renderChips();
+}
+
 // ---- telegram ------------------------------------------------------------
 async function openTelegram() {
   const dlg = $('#tg-dialog'), body = $('#tg-body');
@@ -390,6 +426,7 @@ function bind() {
     const v = location.hash.slice(1);
     if (['chart', 'signals', 'paper', 'backtest'].includes(v)) showView(v);
   });
+  bindCustom();
   $('#tg-open').addEventListener('click', () => openTelegram().catch(showError));
   $('#logout').addEventListener('click', async () => { await api('/api/logout', { method: 'POST' }); location.href = '/login'; });
 }
@@ -401,6 +438,7 @@ async function main() {
   initBacktestChart();
   const me = await api('/api/me');
   $('#who').textContent = me.username;
+  $('#cx-open').classList.toggle('hidden', !me.is_admin);
   state.symbols = await api('/api/symbols');
   state.symbol = state.symbols.length ? state.symbols[0].symbol : null;
   renderChips();

@@ -177,3 +177,23 @@ class WebRepo:
     async def telegram_unlink(self, user_id: int) -> None:
         async with self.s.pool.acquire() as con:
             await con.execute("UPDATE users SET telegram_chat_id=NULL, telegram_name=NULL WHERE id=$1", user_id)
+
+    # ---- admin-added coins --------------------------------------------
+    async def custom_symbols(self) -> list[dict]:
+        async with self.s.pool.acquire() as con:
+            rows = await con.fetch("SELECT input, symbol, status, note, added_at FROM custom_symbols ORDER BY added_at")
+        return [_row(r) for r in rows]
+
+    async def add_custom_symbol(self, user_input: str, user_id: int, limit: int) -> str | None:
+        """Returns an error message, or None on success."""
+        async with self.s.pool.acquire() as con:
+            if await con.fetchval("SELECT 1 FROM custom_symbols WHERE input=$1", user_input):
+                return "این ارز قبلاً اضافه شده است."
+            if await con.fetchval("SELECT count(*) FROM custom_symbols") >= limit:
+                return f"حداکثر {limit} ارز دلخواه؛ برای افزودن، یکی را حذف کنید."
+            await con.execute("INSERT INTO custom_symbols (input, added_by) VALUES ($1,$2)", user_input, user_id)
+        return None
+
+    async def remove_custom_symbol(self, user_input: str) -> None:
+        async with self.s.pool.acquire() as con:
+            await con.execute("DELETE FROM custom_symbols WHERE input=$1", user_input)

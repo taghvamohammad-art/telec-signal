@@ -188,6 +188,44 @@ async def api_telegram_unlink(request: Request) -> Response:
     return JSONResponse({"ok": True})
 
 
+MAX_CUSTOM = 15
+
+
+async def _admin(request: Request):
+    user = await current_user(request)
+    return user if user and user.get("is_admin") else None
+
+
+async def api_custom_list(request: Request) -> Response:
+    if await current_user(request) is None:
+        return _unauth()
+    return JSONResponse(await request.app.state.repo.custom_symbols())
+
+
+async def api_custom_add(request: Request) -> Response:
+    user = await _admin(request)
+    if user is None:
+        return JSONResponse({"error": "فقط مدیر می‌تواند ارز اضافه کند."}, status_code=403)
+    try:
+        raw = str((await request.json())["symbol"])
+    except Exception:
+        return JSONResponse({"error": "نماد را وارد کنید."}, status_code=400)
+    sym = raw.strip().upper().replace("/", "").replace("-", "").replace(" ", "")
+    if not sym.isalnum() or not 2 <= len(sym) <= 20:
+        return JSONResponse({"error": "نماد فقط حروف و عدد انگلیسی است، مثل WIF یا WIFUSDT."}, status_code=400)
+    err = await request.app.state.repo.add_custom_symbol(sym, user["id"], MAX_CUSTOM)
+    if err:
+        return JSONResponse({"error": err}, status_code=409)
+    return JSONResponse({"ok": True})
+
+
+async def api_custom_remove(request: Request) -> Response:
+    if await _admin(request) is None:
+        return JSONResponse({"error": "فقط مدیر می‌تواند ارز حذف کند."}, status_code=403)
+    await request.app.state.repo.remove_custom_symbol(request.path_params["sym"].upper())
+    return JSONResponse({"ok": True})
+
+
 def create_app(repo_factory=None) -> Starlette:
     @contextlib.asynccontextmanager
     async def lifespan(app: Starlette):
@@ -219,6 +257,9 @@ def create_app(repo_factory=None) -> Starlette:
         Route("/api/paper", api_paper),
         Route("/api/paper/reset", api_paper_reset, methods=["POST"]),
         Route("/api/backtests", api_backtests),
+        Route("/api/custom-symbols", api_custom_list),
+        Route("/api/custom-symbols", api_custom_add, methods=["POST"]),
+        Route("/api/custom-symbols/{sym}", api_custom_remove, methods=["DELETE"]),
         Route("/api/telegram", api_telegram),
         Route("/api/telegram/link", api_telegram_link, methods=["POST"]),
         Route("/api/telegram/unlink", api_telegram_unlink, methods=["POST"]),

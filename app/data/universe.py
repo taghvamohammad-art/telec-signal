@@ -127,3 +127,48 @@ def select_analysis_set(universe: list[UniverseEntry], n: int, always: list[str]
         if sym not in picked:
             picked.append(sym)
     return picked
+
+
+def resolve_custom(user_input: str, candidates: list[dict]) -> dict | None:
+    """Match what an admin typed ('wif', 'WIFUSDT', 'PEPE') to a Binance candidate."""
+    raw = user_input.strip().upper().replace("/", "").replace("-", "")
+    if raw.endswith("USDT"):
+        raw = raw[:-4]
+    if not raw.isalnum():
+        return None
+    by_symbol = {c["symbol"]: c for c in candidates}
+    if raw + "USDT" in by_symbol:
+        return by_symbol[raw + "USDT"]
+    base, _ = normalize_base(raw)
+    matches = [c for c in candidates if c["base"] == base]
+    return max(matches, key=lambda c: c["quote_volume"]) if matches else None
+
+
+def add_custom(
+    universe: list[UniverseEntry],
+    candidates: list[dict],
+    lbank: dict[str, str],
+    inputs: list[str],
+) -> tuple[list[UniverseEntry], list[str], dict[str, tuple[str, str | None, str | None]]]:
+    """Extend the universe with admin-chosen coins.
+
+    Returns (universe, custom symbols to analyze, status per input:
+    (status, resolved symbol, note)). Status is 'active' or 'invalid'.
+    """
+    out = list(universe)
+    present = {u.symbol for u in out}
+    chosen: list[str] = []
+    status: dict[str, tuple[str, str | None, str | None]] = {}
+    for inp in inputs:
+        c = resolve_custom(inp, candidates)
+        if c is None:
+            status[inp] = ("invalid", None, "در فیوچرز بایننس پیدا نشد")
+            continue
+        lb = lbank.get(c["base"])
+        if c["symbol"] not in present:
+            out.append(UniverseEntry(c["symbol"], c["base"], c["multiplier"], c["quote_volume"], c["range_pct"], lb is not None, lb))
+            present.add(c["symbol"])
+        if c["symbol"] not in chosen:
+            chosen.append(c["symbol"])
+        status[inp] = ("active", c["symbol"], None if lb else "در ال‌بانک نیست؛ تحلیل می‌شود ولی سیگنال صادر نمی‌شود")
+    return out, chosen, status

@@ -234,3 +234,14 @@ CREATE TABLE IF NOT EXISTS app_settings (
     key    text PRIMARY KEY,
     value  text NOT NULL
 );
+
+-- ---- coins added by the admin ------------------------------------------
+CREATE TABLE IF NOT EXISTS custom_symbols (
+    input       text        PRIMARY KEY,         -- what the admin typed, upper case
+    symbol      text,                            -- resolved Binance symbol
+    status      text        NOT NULL DEFAULT 'pending',   -- pending | active | invalid
+    note        text,
+    added_by    integer     REFERENCES users(id) ON DELETE SET NULL,
+    added_at    timestamptz NOT NULL DEFAULT now(),
+    checked_at  timestamptz
+);

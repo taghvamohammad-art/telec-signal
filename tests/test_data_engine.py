@@ -196,3 +196,22 @@ def test_select_analysis_set_volume_only_by_default():
     ]
     assert select_analysis_set(uni, 2, []) == ["BIGUSDT", "MIDUSDT"]
     assert "PUMPXUSDT" in select_analysis_set(uni, 2, [], volatility_weight=0.9)
+
+
+def test_custom_coins_resolve_and_extend_universe():
+    from app.data.universe import add_custom, resolve_custom
+    cands = [
+        {"symbol": "BTCUSDT", "base": "BTC", "multiplier": 1, "quote_volume": 9e9, "range_pct": 2.0},
+        {"symbol": "1000PEPEUSDT", "base": "PEPE", "multiplier": 1000, "quote_volume": 5e8, "range_pct": 6.0},
+        {"symbol": "WIFUSDT", "base": "WIF", "multiplier": 1, "quote_volume": 1e8, "range_pct": 5.0},
+    ]
+    assert resolve_custom("pepe", cands)["symbol"] == "1000PEPEUSDT"
+    assert resolve_custom("WIF/USDT", cands)["symbol"] == "WIFUSDT"
+    assert resolve_custom("NOPE", cands) is None and resolve_custom("a b", cands) is None
+    uni = [UniverseEntry("BTCUSDT", "BTC", 1, 9e9, 2.0, True, "BTC/USDT:USDT")]
+    out, chosen, st = add_custom(uni, cands, {"WIF": "WIF/USDT:USDT"}, ["WIF", "PEPE", "NOPE", "BTC"])
+    assert chosen == ["WIFUSDT", "1000PEPEUSDT", "BTCUSDT"]
+    assert [u.symbol for u in out] == ["BTCUSDT", "WIFUSDT", "1000PEPEUSDT"]
+    assert st["WIF"] == ("active", "WIFUSDT", None)
+    assert st["PEPE"][0] == "active" and "ال‌بانک" in st["PEPE"][2]
+    assert st["NOPE"][0] == "invalid"

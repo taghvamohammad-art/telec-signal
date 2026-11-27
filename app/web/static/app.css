@@ -205,3 +205,20 @@ dialog::backdrop { background: rgba(10, 12, 24, .65); }
 .linked { display: flex; align-items: center; gap: 10px; }
 .linked i { width: 10px; height: 10px; border-radius: 50%; background: var(--long); }
 @media (max-width: 720px) { .tg-label { display: none; } }
+
+/* ---- custom coins ---- */
+.chips-row { display: flex; gap: 6px; align-items: flex-start; }
+.chips-row .chips { flex: 1; min-width: 0; }
+.chip.add { flex: none; width: 34px; justify-content: center; font-size: 18px; line-height: 1; padding: 4px 0; color: var(--saffron); border-color: var(--line); }
+.cx-add { display: flex; gap: 8px; }
+.cx-add input { flex: 1; }
+.cx-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-height: 280px; overflow-y: auto; }
+.cx-list li { display: flex; align-items: center; gap: 10px; background: var(--ink); border-radius: var(--radius-s); padding: 8px 12px; }
+.cx-list li b { min-width: 110px; }
+.cx-list li small { flex: 1; color: var(--muted); }
+.cx-list li .st { font-size: 12px; padding: 1px 8px; border-radius: 10px; background: var(--line); }
+.cx-list li .st.active { background: rgba(59,191,154,.18); color: var(--long); }
+.cx-list li .st.invalid { background: rgba(239,107,107,.18); color: var(--short); }
+.cx-list li button { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 18px; padding: 0 4px; }
+.cx-list li button:hover { color: var(--short); }
+#cx-dialog { width: min(580px, 94vw); }

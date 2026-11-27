@@ -8,10 +8,10 @@
 | --- | --- | --- |
 | ۱ | موتور داده و دیتابیس | ✅ آماده برای تست روی سرور |
 | ۲ | اندیکاتورها و موتور تحلیل | ✅ آماده برای تست روی سرور |
-| ۳ | مدیریت ریسک و تطبیق با ال‌بانک | ⏳ |
+| ۳ | مدیریت ریسک (اندازه پوزیشن و اهرم) | ✅ در ترید مجازی؛ تطبیق ال‌بانک ⏳ |
 | ۴ | چرخه عمر سیگنال و بات تلگرام | ⏳ |
 | ۵ | بک‌تست | ⏳ |
-| ۶ | پنل وب | ⏳ |
+| ۶ | پنل وب: نمودار، سیگنال‌ها، ترید مجازی | ✅ آماده برای تست روی سرور |
 
 ## موتور داده چه می‌کند
 
@@ -36,6 +36,22 @@
 .venv/bin/python scripts/analyze_now.py            # تحلیل همین لحظه همه ارزها (بدون ذخیره)
 .venv/bin/python scripts/analyze_now.py SOLUSDT    # جزئیات یک ارز
 journalctl -u telec-analysis -f
+```
+
+## پنل وب و ترید مجازی
+
+- آدرس: `https://signal.telec.shop` (سرویس `telec-web` پشت Nginx با گواهی رایگان Let's Encrypt).
+- نمودار: کندل‌ها، فلش سیگنال‌ها، خط‌های ورود/حد ضرر/TP، و «نردبان ریسک» هر سیگنال.
+- ترید مجازی: هر کاربر سرمایه آزمایشی خودش را دارد. هر سیگنال با قیمت باز شدن کندل ۱۵ دقیقه بعد وارد می‌شود؛ ریسک ۰٫۵ تا ۱٫۵٪ بر اساس امتیاز؛ اهرم کمترین مقدار کافی تا ۲۰x به‌شرط فاصله امن لیکوئید؛ نصف پوزیشن در TP1 و انتقال حد ضرر به ورود؛ اگر یک کندل هم حد ضرر و هم هدف را لمس کند، ضرر حساب می‌شود؛ کارمزد ۰٫۰۶٪ و فاندینگ واقعی کسر می‌شود.
+
+کاربران:
+
+```bash
+sudo -u telec .venv/bin/python scripts/manage_users.py add admin --admin
+sudo -u telec .venv/bin/python scripts/manage_users.py add ali
+sudo -u telec .venv/bin/python scripts/manage_users.py list
+sudo -u telec .venv/bin/python scripts/manage_users.py passwd ali
+sudo -u telec .venv/bin/python scripts/manage_users.py disable ali
 ```
 
 ## نصب روی سرور (Ubuntu 24.04)

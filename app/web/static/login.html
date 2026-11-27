@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#151a2e">
+<title>ورود به تلک</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<main class="login">
+  <form id="f" novalidate>
+    <div class="brand"><b>تلک</b><span>سیگنال کریپتو</span></div>
+    <label>نام کاربری
+      <input class="field" name="username" autocomplete="username" required autofocus>
+    </label>
+    <label>رمز عبور
+      <input class="field" name="password" type="password" autocomplete="current-password" required>
+    </label>
+    <button class="btn" type="submit">ورود</button>
+    <p class="form-error" id="err" role="alert"></p>
+  </form>
+</main>
+<script>
+const f = document.getElementById('f'), err = document.getElementById('err');
+f.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(f);
+  if (!fd.get('username') || !fd.get('password')) { err.textContent = 'نام کاربری و رمز را وارد کنید.'; return; }
+  err.textContent = '';
+  f.querySelector('button').disabled = true;
+  try {
+    const r = await fetch('/api/login', {method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({username: fd.get('username'), password: fd.get('password')})});
+    if (r.ok) { location.href = '/'; return; }
+    err.textContent = (await r.json()).error || 'ورود انجام نشد.';
+  } catch { err.textContent = 'سرور در دسترس نیست. اتصال اینترنت را بررسی کنید.'; }
+  f.querySelector('button').disabled = false;
+});
+</script>
+</body>
+</html>

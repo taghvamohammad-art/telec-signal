@@ -21,6 +21,7 @@ from app.analysis.scoring import VERSION, Candidate
 from app.config import load_settings
 from app.core.timeframes import last_closed_open_time, tf_ms
 from app.data.store import Store, dt_to_ms, ms_to_dt
+from app.paper.service import PaperService
 
 log = logging.getLogger("telec.analysis")
 
@@ -129,6 +130,7 @@ async def main() -> None:
     await store.connect()
     await store.apply_schema()
     repo = AnalysisRepo(store)
+    paper = PaperService(store)
     alerts = AdminAlerter(cfg.admin_bot_token, cfg.admin_chat_id)
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
@@ -151,6 +153,11 @@ async def main() -> None:
         except Exception as exc:
             log.exception("analysis cycle failed")
             await alerts.send("analysis_error", f"خطا در چرخه تحلیل: {exc}")
+        try:
+            log.info("paper: %s", await paper.tick())
+        except Exception as exc:
+            log.exception("paper tick failed")
+            await alerts.send("paper_error", f"خطا در ترید مجازی: {exc}")
     await store.close()
 
 

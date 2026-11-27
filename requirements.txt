@@ -5,3 +5,5 @@ ccxt>=4.4,<5
 numpy>=1.26
 pandas>=2.2
 python-dotenv>=1.0
+starlette>=0.40
+uvicorn>=0.30

@@ -123,8 +123,26 @@ say "Unit tests"
 say "Connectivity check"
 (cd "$APP_DIR" && .venv/bin/python scripts/check_connectivity.py) || warn "fix connectivity before relying on the engine"
 
+say "Web assets (chart library, font) served from this server"
+VENDOR="$APP_DIR/app/web/static/vendor"
+mkdir -p "$VENDOR"
+fetch() {  # fetch DEST URL... (first URL that works)
+  local dest="$1"; shift
+  [[ -s "$dest" ]] && return 0
+  for url in "$@"; do curl -fsSL --max-time 60 "$url" -o "$dest.tmp" && mv "$dest.tmp" "$dest" && return 0; done
+  rm -f "$dest.tmp"; return 1
+}
+fetch "$VENDOR/lightweight-charts.js" \
+  "https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js" \
+  "https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js" \
+  || warn "chart library download failed; the chart will not render"
+fetch "$VENDOR/Vazirmatn.woff2" \
+  "https://cdn.jsdelivr.net/npm/vazirmatn@33.0.3/fonts/webfonts/Vazirmatn%5Bwght%5D.woff2" \
+  "https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/fonts/webfonts/Vazirmatn%5Bwght%5D.woff2" \
+  || warn "font download failed; falling back to Tahoma"
+
 say "systemd services"
-SERVICES=(telec-data telec-analysis)
+SERVICES=(telec-data telec-analysis telec-web)
 for svc in "${SERVICES[@]}"; do
   sed "s#__APP_DIR__#${APP_DIR}#g" "$APP_DIR/deploy/${svc}.service" > "/etc/systemd/system/${svc}.service"
 done
@@ -138,4 +156,39 @@ for svc in "${SERVICES[@]}"; do
   systemctl --no-pager --lines=5 status "${svc}.service" || true
 done
 
-say "Done. Logs: journalctl -u telec-data -f   |   journalctl -u telec-analysis -f"
+say "Nginx and HTTPS"
+grep -q '^DOMAIN=' "$APP_DIR/.env" || printf '\nDOMAIN=signal.telec.shop\n' >> "$APP_DIR/.env"
+DOMAIN="$(grep '^DOMAIN=' "$APP_DIR/.env" | tail -1 | cut -d= -f2- | tr -d '[:space:]')"
+apt-get install -y nginx certbot python3-certbot-nginx
+cat > /etc/nginx/sites-available/telec-signal <<NGINX
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${DOMAIN};
+    client_max_body_size 1m;
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+}
+NGINX
+ln -sf /etc/nginx/sites-available/telec-signal /etc/nginx/sites-enabled/telec-signal
+rm -f /etc/nginx/sites-enabled/default
+nginx -t && systemctl reload nginx
+if command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then ufw allow 'Nginx Full' || true; fi
+if [[ ! -d "/etc/letsencrypt/live/${DOMAIN}" ]]; then
+  certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos --register-unsafely-without-email --redirect \
+    || warn "HTTPS certificate failed: check that ${DOMAIN} points to this server, then run: sudo certbot --nginx -d ${DOMAIN}"
+else
+  certbot install --nginx --cert-name "$DOMAIN" --non-interactive --redirect >/dev/null 2>&1 || true
+fi
+
+USERS="$(sudo -u postgres psql -d "$DB_NAME" -tAc 'SELECT count(*) FROM users' 2>/dev/null || echo 0)"
+if [[ "${USERS:-0}" == "0" ]]; then
+  say "Create the first panel user:"
+  echo "  cd $APP_DIR && sudo -u $APP_USER .venv/bin/python scripts/manage_users.py add admin --admin"
+fi
+
+say "Done. Panel: https://${DOMAIN}   Logs: journalctl -u telec-data -f | -u telec-analysis -f | -u telec-web -f"

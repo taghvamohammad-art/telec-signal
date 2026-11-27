@@ -1,0 +1,134 @@
+"""Database queries for the web panel. Returns plain dicts with epoch-ms times."""
+
+from __future__ import annotations
+
+import json
+from datetime import datetime, timedelta, timezone
+
+from app.data.store import Store, dt_to_ms, ms_to_dt
+from app.paper.sim import stats
+
+SESSION_DAYS = 14
+
+
+def _ms(v):
+    return dt_to_ms(v) if isinstance(v, datetime) else v
+
+
+def _row(r) -> dict:
+    d = {}
+    for k, v in dict(r).items():
+        if isinstance(v, datetime):
+            v = dt_to_ms(v)
+        elif k in ("styles", "notes", "events", "votes") and isinstance(v, str):
+            v = json.loads(v)
+        d[k] = v
+    return d
+
+
+class WebRepo:
+    def __init__(self, store: Store):
+        self.s = store
+
+    # ---- auth ---------------------------------------------------------
+    async def user_by_name(self, username: str):
+        async with self.s.pool.acquire() as con:
+            r = await con.fetchrow("SELECT * FROM users WHERE username=$1 AND active", username)
+        return dict(r) if r else None
+
+    async def create_session(self, user_id: int, token: str) -> None:
+        async with self.s.pool.acquire() as con:
+            await con.execute("DELETE FROM sessions WHERE expires_at < now()")
+            await con.execute("INSERT INTO sessions (token, user_id, expires_at) VALUES ($1,$2,$3)",
+                              token, user_id, datetime.now(timezone.utc) + timedelta(days=SESSION_DAYS))
+
+    async def user_by_session(self, token: str):
+        async with self.s.pool.acquire() as con:
+            r = await con.fetchrow(
+                """SELECT u.id, u.username, u.is_admin FROM sessions s JOIN users u ON u.id=s.user_id
+                   WHERE s.token=$1 AND s.expires_at > now() AND u.active""", token)
+        return dict(r) if r else None
+
+    async def delete_session(self, token: str) -> None:
+        async with self.s.pool.acquire() as con:
+            await con.execute("DELETE FROM sessions WHERE token=$1", token)
+
+    # ---- market -------------------------------------------------------
+    async def symbols(self) -> list[dict]:
+        async with self.s.pool.acquire() as con:
+            rows = await con.fetch(
+                """SELECT u.symbol, u.rank, u.in_analysis, a.regime_1h, a.bias_4h, a.result
+                   FROM universe_snapshots u LEFT JOIN analysis_state a ON a.symbol=u.symbol
+                   WHERE u.day=(SELECT max(day) FROM universe_snapshots) AND u.in_analysis ORDER BY u.rank""")
+        return [dict(r) for r in rows]
+
+    async def candles(self, symbol: str, tf: str, limit: int) -> list[list]:
+        async with self.s.pool.acquire() as con:
+            rows = await con.fetch(
+                """SELECT open_time, open, high, low, close, volume FROM candles
+                   WHERE symbol=$1 AND tf=$2 ORDER BY open_time DESC LIMIT $3""", symbol, tf, limit)
+        return [[dt_to_ms(r["open_time"]), r["open"], r["high"], r["low"], r["close"], r["volume"]] for r in reversed(rows)]
+
+    async def signals(self, user_id: int, symbol: str | None, limit: int) -> list[dict]:
+        async with self.s.pool.acquire() as con:
+            rows = await con.fetch(
+                """SELECT c.id, c.created_at, c.bar_time, c.symbol, c.side, c.score, c.regime_1h, c.bias_4h,
+                          c.entry, c.stop, c.tp1, c.tp2, c.risk, c.f_market, c.styles, c.notes,
+                          p.status AS paper_status, p.exit_reason AS paper_exit, p.realized AS paper_pnl,
+                          p.skip_reason AS paper_skip, p.closed_at AS paper_closed_at, p.entry AS paper_entry
+                   FROM signal_candidates c
+                   LEFT JOIN paper_accounts a ON a.user_id=$1
+                   LEFT JOIN paper_trades p ON p.candidate_id=c.id AND p.account_id=a.id
+                   WHERE ($2::text IS NULL OR c.symbol=$2)
+                   ORDER BY c.bar_time DESC LIMIT $3""", user_id, symbol, limit)
+        return [_row(r) for r in rows]
+
+    # ---- paper --------------------------------------------------------
+    async def paper(self, user_id: int) -> dict:
+        async with self.s.pool.acquire() as con:
+            acc = await con.fetchrow("SELECT * FROM paper_accounts WHERE user_id=$1", user_id)
+            if acc is None:
+                return {"account": None}
+            trades = [_row(r) for r in await con.fetch(
+                "SELECT * FROM paper_trades WHERE account_id=$1 ORDER BY coalesce(opened_at, now()) DESC, id DESC LIMIT 500", acc["id"])]
+            marks = {r["symbol"]: r["mark_price"] for r in await con.fetch(
+                """SELECT DISTINCT ON (symbol) symbol, mark_price FROM funding_rates
+                   WHERE symbol = ANY($1::text[]) ORDER BY symbol, ts DESC""",
+                [t["symbol"] for t in trades if t["status"] == "open"])}
+        initial = acc["initial_capital"]
+        realized = sum(t["realized"] for t in trades if t["status"] != "skipped")
+        unreal = 0.0
+        for t in trades:
+            t.pop("events", None)
+            if t["status"] == "open":
+                mark = marks.get(t["symbol"])
+                t["mark"] = mark
+                t["unrealized"] = t["side"] * (mark - t["entry"]) * t["qty_open"] if mark else None
+                unreal += t["unrealized"] or 0.0
+        closed = sorted((t for t in trades if t["status"] == "closed"), key=lambda t: t["closed_at"])
+        curve, eq = [{"t": _ms(acc["started_at"]), "equity": initial}], initial
+        for t in closed:
+            eq += t["realized"]
+            curve.append({"t": t["closed_at"], "equity": round(eq, 2)})
+        return {
+            "account": {"initial_capital": initial, "started_at": _ms(acc["started_at"]), "fee_rate": acc["fee_rate"],
+                        "max_open": acc["max_open"], "max_same_side": acc["max_same_side"]},
+            "equity_realized": round(initial + realized, 2),
+            "equity": round(initial + realized + unreal, 2),
+            "unrealized": round(unreal, 2),
+            "margin_used": round(sum(t["margin"] or 0 for t in trades if t["status"] == "open"), 2),
+            "stats": stats([t["realized"] for t in closed], [p["equity"] for p in curve]),
+            "curve": curve,
+            "open": [t for t in trades if t["status"] == "open"],
+            "history": [t for t in trades if t["status"] != "open"][:300],
+        }
+
+    async def paper_reset(self, user_id: int, capital: float) -> None:
+        async with self.s.pool.acquire() as con:
+            async with con.transaction():
+                acc = await con.fetchrow("SELECT id FROM paper_accounts WHERE user_id=$1", user_id)
+                if acc:
+                    await con.execute("DELETE FROM paper_trades WHERE account_id=$1", acc["id"])
+                    await con.execute("UPDATE paper_accounts SET initial_capital=$2, started_at=now() WHERE id=$1", acc["id"], capital)
+                else:
+                    await con.execute("INSERT INTO paper_accounts (user_id, initial_capital) VALUES ($1,$2)", user_id, capital)

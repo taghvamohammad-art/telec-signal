@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#151a2e">
+<title>تلک · سیگنال کریپتو</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><b>تلک</b></div>
+  <nav class="tabs" role="tablist">
+    <button role="tab" data-view="chart" aria-selected="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 19V5M4 19h16M8 15v-4M12 15V8M16 15v-6"/></svg>نمودار</button>
+    <button role="tab" data-view="signals" aria-selected="false">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M5 12h3l2-6 4 12 2-6h3"/></svg>سیگنال‌ها</button>
+    <button role="tab" data-view="paper" aria-selected="false">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h4"/></svg>ترید مجازی</button>
+  </nav>
+  <div class="who"><span id="who"></span><button class="btn quiet" id="logout">خروج</button></div>
+</header>
+
+<main>
+  <!-- chart -->
+  <section class="view" id="view-chart">
+    <div class="chips" id="chips" aria-label="ارزها"></div>
+    <div class="chart-bar">
+      <div class="chart-title"><h2 id="c-symbol">…</h2><span class="muted" id="c-regime"></span></div>
+      <div class="tf" id="tf">
+        <button data-tf="15m" aria-pressed="false">۱۵ دقیقه</button>
+        <button data-tf="1h" aria-pressed="true">۱ ساعت</button>
+        <button data-tf="4h" aria-pressed="false">۴ ساعت</button>
+        <button data-tf="1d" aria-pressed="false">روزانه</button>
+      </div>
+    </div>
+    <div id="chart"></div>
+    <div class="chart-key">
+      <span><i style="border-color:#e9b44c"></i>ورود</span>
+      <span><i style="border-color:#ef6b6b"></i>حد ضرر</span>
+      <span><i style="border-color:#3bbf9a"></i>حد سود</span>
+      <span>فلش‌ها سیگنال‌های صادرشده‌اند؛ روی سیگنال‌ها در پایین بزنید تا خط‌هایش روی نمودار بیاید.</span>
+    </div>
+    <h3 class="section-title">سیگنال‌های این ارز <span class="count" id="c-count"></span></h3>
+    <div class="tickets" id="c-tickets"></div>
+  </section>
+
+  <!-- signals -->
+  <section class="view" id="view-signals" hidden>
+    <div class="view-head">
+      <div><h1>سیگنال‌ها</h1><p>هر ۱۵ دقیقه بازار بررسی می‌شود. فقط فرصت‌هایی که چند سبک هم‌زمان تأییدشان کنند ثبت می‌شوند.</p></div>
+    </div>
+    <div class="tickets" id="s-tickets"></div>
+  </section>
+
+  <!-- paper -->
+  <section class="view" id="view-paper" hidden>
+    <div class="view-head">
+      <div><h1>ترید مجازی</h1><p>هر سیگنال جدید با حجم و اهرم پیشنهادی، بدون پول واقعی، ثبت و تا پایان پیگیری می‌شود.</p></div>
+    </div>
+    <div id="p-start" class="start hidden">
+      <h2>سرمایهٔ آزمایشی را تعیین کنید</h2>
+      <p>از این لحظه هر سیگنال با ریسک ۰٫۵ تا ۱٫۵ درصد این سرمایه وارد می‌شود و نتیجه‌اش اینجا می‌آید. کارمزد و فاندینگ هم حساب می‌شوند.</p>
+      <form id="p-start-form">
+        <label class="money"><input name="capital" inputmode="decimal" value="1000" aria-label="سرمایه"><span class="muted">USDT</span></label>
+        <button class="btn" type="submit">شروع ترید مجازی</button>
+      </form>
+      <p class="form-error" id="p-start-err"></p>
+    </div>
+    <div id="p-main" class="hidden">
+      <div class="equity-head">
+        <div><span class="muted">موجودی فعلی</span><div class="big num" id="p-equity"></div></div>
+        <div class="delta num" id="p-delta"></div>
+        <div class="muted" id="p-since"></div>
+      </div>
+      <div class="stats" id="p-stats"></div>
+      <div id="equity"></div>
+      <h3 class="section-title">پوزیشن‌های باز <span class="count" id="p-open-count"></span></h3>
+      <div class="tickets" id="p-open"></div>
+      <h3 class="section-title">تاریخچه <span class="count" id="p-hist-count"></span></h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>زمان</th><th>ارز</th><th>جهت</th><th>امتیاز</th><th>ورود</th><th>اهرم</th><th>نتیجه</th><th>سود / زیان</th></tr></thead>
+        <tbody id="p-hist"></tbody>
+      </table></div>
+      <details class="reset">
+        <summary>شروع دوباره با سرمایهٔ جدید</summary>
+        <form id="p-reset-form">
+          <label class="money"><input name="capital" inputmode="decimal" aria-label="سرمایهٔ جدید"><span class="muted">USDT</span></label>
+          <button class="btn quiet" type="submit">پاک کردن تاریخچه و شروع دوباره</button>
+        </form>
+      </details>
+    </div>
+  </section>
+</main>
+<footer>نمودارها با <a href="https://www.tradingview.com/" target="_blank" rel="noopener">TradingView Lightweight Charts</a>. سیگنال‌ها توصیهٔ مالی نیستند.</footer>
+
+<script src="/static/vendor/lightweight-charts.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>

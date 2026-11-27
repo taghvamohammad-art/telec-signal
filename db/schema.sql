@@ -118,3 +118,64 @@ CREATE TABLE IF NOT EXISTS analysis_state (
     votes       jsonb       NOT NULL,
     result      text        NOT NULL
 );
+
+-- ---- users, sessions, paper trading -----------------------------------
+CREATE TABLE IF NOT EXISTS users (
+    id             serial      PRIMARY KEY,
+    username       text        NOT NULL UNIQUE,
+    password_hash  text        NOT NULL,
+    is_admin       boolean     NOT NULL DEFAULT false,
+    active         boolean     NOT NULL DEFAULT true,
+    created_at     timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+    token       text        PRIMARY KEY,
+    user_id     integer     NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    expires_at  timestamptz NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS paper_accounts (
+    id               serial           PRIMARY KEY,
+    user_id          integer          NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+    initial_capital  double precision NOT NULL,
+    started_at       timestamptz      NOT NULL DEFAULT now(),
+    fee_rate         double precision NOT NULL DEFAULT 0.0006,
+    max_open         integer          NOT NULL DEFAULT 5,
+    max_same_side    integer          NOT NULL DEFAULT 3
+);
+
+CREATE TABLE IF NOT EXISTS paper_trades (
+    id            bigserial        PRIMARY KEY,
+    account_id    integer          NOT NULL REFERENCES paper_accounts(id) ON DELETE CASCADE,
+    candidate_id  bigint           NOT NULL REFERENCES signal_candidates(id) ON DELETE CASCADE,
+    symbol        text             NOT NULL,
+    side          smallint         NOT NULL,
+    status        text             NOT NULL,       -- open | closed | skipped
+    skip_reason   text,
+    score         double precision NOT NULL,
+    signal_entry  double precision NOT NULL,
+    entry         double precision,
+    qty           double precision,
+    qty_open      double precision,
+    leverage      integer,
+    margin        double precision,
+    risk_pct      double precision,
+    risk_amount   double precision,
+    stop_initial  double precision NOT NULL,
+    stop          double precision NOT NULL,
+    tp1           double precision NOT NULL,
+    tp2           double precision NOT NULL,
+    tp1_hit       boolean          NOT NULL DEFAULT false,
+    realized      double precision NOT NULL DEFAULT 0,
+    fees          double precision NOT NULL DEFAULT 0,
+    funding       double precision NOT NULL DEFAULT 0,
+    opened_at     timestamptz,
+    closed_at     timestamptz,
+    exit_reason   text,
+    last_bar      timestamptz,                      -- last processed 15m open time
+    events        jsonb            NOT NULL DEFAULT '[]',
+    note          text,
+    UNIQUE (account_id, candidate_id)
+);
+CREATE INDEX IF NOT EXISTS paper_trades_account_idx ON paper_trades (account_id, status);

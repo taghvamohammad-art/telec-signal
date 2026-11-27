@@ -3,6 +3,7 @@
 #   sudo bash deploy/install.sh
 # Safe to run again after `git pull` (keeps .env and the database).
 set -euo pipefail
+trap 'printf "\n\033[1;31m!! install failed at line %s: %s\033[0m\n" "$LINENO" "$BASH_COMMAND"' ERR
 
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_USER=telec
@@ -17,11 +18,20 @@ warn() { printf '\033[1;33m!! %s\033[0m\n' "$*"; }
 . /etc/os-release
 [[ "${VERSION_ID:-}" == "24.04" ]] || warn "Tested on Ubuntu 24.04, this is ${PRETTY_NAME:-unknown}"
 
+PG_VER=16
+
 say "System packages"
 apt-get update -y
-apt-get install -y python3-venv python3-pip postgresql postgresql-contrib curl gnupg lsb-release git
+apt-get install -y python3-venv python3-pip curl gnupg lsb-release git ca-certificates postgresql-common
 
-PG_VER="$(psql --version | grep -oE '[0-9]+' | head -1)"
+# Official PostgreSQL repo: Ubuntu's own build often lags the minor version TimescaleDB requires.
+if ! grep -rqs apt.postgresql.org /etc/apt/sources.list.d/; then
+  say "Adding PostgreSQL (PGDG) apt repository"
+  /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y || warn "PGDG repo setup failed; using Ubuntu's PostgreSQL"
+fi
+apt-get update -y
+apt-get install -y "postgresql-${PG_VER}" "postgresql-client-${PG_VER}"
+systemctl enable --now postgresql
 
 say "TimescaleDB (optional; the app works without it)"
 if ! dpkg -s "timescaledb-2-postgresql-${PG_VER}" >/dev/null 2>&1; then
@@ -38,7 +48,7 @@ fi
 
 say "Swap (small servers)"
 MEM_MB=$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo)
-if [[ $MEM_MB -lt 3000 ]] && ! swapon --show | grep -q .; then
+if [[ $MEM_MB -lt 3000 && -z "$(swapon --show --noheadings)" && ! -e /swapfile ]]; then
   fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
   grep -q '/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
   sysctl -w vm.swappiness=10 >/dev/null && echo 'vm.swappiness=10' > /etc/sysctl.d/99-telec.conf
@@ -49,7 +59,8 @@ id -u "$APP_USER" >/dev/null 2>&1 || useradd --system --home "$APP_DIR" --shell 
 
 say "Database"
 if [[ ! -f "$APP_DIR/.env" ]]; then
-  DB_PASS="$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 24)"
+  # (tr </dev/urandom | head would be killed by SIGPIPE under pipefail and abort silently)
+  DB_PASS="$(python3 -c 'import secrets; print(secrets.token_hex(16))')"
   sudo -u postgres psql -v ON_ERROR_STOP=1 <<SQL
 DO \$\$ BEGIN
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '${DB_USER}') THEN
@@ -59,8 +70,8 @@ DO \$\$ BEGIN
   END IF;
 END \$\$;
 SQL
-  sudo -u postgres psql -tc "SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'" | grep -q 1 \
-    || sudo -u postgres createdb -O "$DB_USER" "$DB_NAME"
+  DB_EXISTS="$(sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'")"
+  [[ "$DB_EXISTS" == "1" ]] || sudo -u postgres createdb -O "$DB_USER" "$DB_NAME"
   sed "s#^DATABASE_URL=.*#DATABASE_URL=postgresql://${DB_USER}:${DB_PASS}@localhost:5432/${DB_NAME}#" \
     "$APP_DIR/.env.example" > "$APP_DIR/.env"
   chmod 640 "$APP_DIR/.env"

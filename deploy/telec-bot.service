@@ -1,0 +1,23 @@
+[Unit]
+Description=telec-signal telegram bot
+After=network-online.target postgresql.service
+Wants=network-online.target
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=telec
+Group=telec
+WorkingDirectory=__APP_DIR__
+EnvironmentFile=__APP_DIR__/.env
+ExecStart=__APP_DIR__/.venv/bin/python -m app.bot.main
+Restart=always
+RestartSec=10
+TimeoutStopSec=20
+MemoryMax=200M
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -24,6 +24,7 @@ from app.config import load_settings
 from app.core.timeframes import last_closed_open_time, tf_ms
 from app.data.store import Store, dt_to_ms, ms_to_dt
 from app.paper.service import PaperService
+from app.signals.lifecycle import LifecycleTracker
 
 log = logging.getLogger("telec.analysis")
 
@@ -75,10 +76,11 @@ class AnalysisRepo:
                 symbol, COOLDOWN_H,
             ))
 
-    async def save_candidate(self, c: Candidate, bar_ms: int, regime: str, bias: int, lb: LBankResult | None = None) -> bool:
+    async def save_candidate(self, c: Candidate, bar_ms: int, regime: str, bias: int, lb: LBankResult | None = None) -> int | None:
+        """Stores the candidate and its 'new' event; returns the id (None if it already existed)."""
         lb = lb or LBankResult(False, "skipped")
-        async with self.s.pool.acquire() as con:
-            res = await con.execute(
+        async with self.s.pool.acquire() as con, con.transaction():
+            cid = await con.fetchval(
                 """INSERT INTO signal_candidates
                    (bar_time, symbol, side, score, regime_1h, bias_4h, entry, stop, tp1, tp2, risk,
                     f_market, f_news, styles, notes, version,
@@ -86,13 +88,15 @@ class AnalysisRepo:
                     lbank_entry, lbank_stop, lbank_tp1, lbank_tp2)
                    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb,$15::jsonb,$16,
                            $17,$18,$19,$20,$21,$22,$23,$24,$25)
-                   ON CONFLICT (symbol, bar_time) DO NOTHING""",
+                   ON CONFLICT (symbol, bar_time) DO NOTHING RETURNING id""",
                 ms_to_dt(bar_ms), c.symbol, c.side, c.score, regime, bias, c.entry, c.stop, c.tp1, c.tp2, c.risk,
                 c.f_market, c.f_news, json.dumps([asdict(v) for v in c.votes], ensure_ascii=False),
                 json.dumps(c.notes, ensure_ascii=False), VERSION,
                 lb.symbol, lb.price, lb.diff_pct, lb.spread_pct, lb.depth_usdt, lb.entry, lb.stop, lb.tp1, lb.tp2,
             )
-        return res.endswith("1")
+            if cid is not None:
+                await con.execute("INSERT INTO signal_events (candidate_id, kind) VALUES ($1, 'new') ON CONFLICT DO NOTHING", cid)
+        return cid
 
     async def save_state(self, symbol: str, bar_ms: int, regime: str, bias: int, votes, result: str) -> None:
         async with self.s.pool.acquire() as con:
@@ -156,6 +160,7 @@ async def main() -> None:
     await store.apply_schema()
     repo = AnalysisRepo(store)
     paper = PaperService(store)
+    tracker = LifecycleTracker(store)
     lbank = None
     if os.environ.get("LBANK_CHECK", "1") != "0":
         from app.data.lbank import LBankFutures
@@ -183,6 +188,11 @@ async def main() -> None:
         except Exception as exc:
             log.exception("analysis cycle failed")
             await alerts.send("analysis_error", f"خطا در چرخه تحلیل: {exc}")
+        try:
+            log.info("lifecycle: %s", await tracker.tick())
+        except Exception as exc:
+            log.exception("lifecycle tick failed")
+            await alerts.send("lifecycle_error", f"خطا در پیگیری سیگنال‌ها: {exc}")
         try:
             log.info("paper: %s", await paper.tick())
         except Exception as exc:

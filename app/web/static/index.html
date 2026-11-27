@@ -20,7 +20,11 @@
     <button role="tab" data-view="backtest" aria-selected="false">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 7v5l3 2"/><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3L4 9.4"/><path d="M4 5v4.4h4.4"/></svg>بک‌تست</button>
   </nav>
-  <div class="who"><span id="who"></span><button class="btn quiet" id="logout">خروج</button></div>
+  <div class="who"><span id="who"></span>
+    <button class="btn quiet" id="tg-open" aria-haspopup="dialog">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M21 4 3 11l6 2 2 6 3-4 5 4 2-15Z"/><path d="m9 13 8-6"/></svg>
+      <span class="tg-label">تلگرام</span></button>
+    <button class="btn quiet" id="logout">خروج</button></div>
 </header>
 
 <main>
@@ -120,6 +124,13 @@
     </div>
   </section>
 </main>
+<dialog id="tg-dialog" aria-labelledby="tg-title">
+  <form method="dialog" class="dlg">
+    <h2 id="tg-title">اعلان‌های تلگرام</h2>
+    <div id="tg-body"><p class="muted">در حال بارگذاری…</p></div>
+    <div class="dlg-actions"><button class="btn quiet" value="close">بستن</button></div>
+  </form>
+</dialog>
 <footer>نمودارها با <a href="https://www.tradingview.com/" target="_blank" rel="noopener">TradingView Lightweight Charts</a>. سیگنال‌ها توصیهٔ مالی نیستند.</footer>
 
 <script src="/static/vendor/lightweight-charts.js"></script>

@@ -32,6 +32,7 @@ function decimals(p) {
 }
 const fp = (p, ref) => p == null ? '—' : Number(p).toLocaleString('en-US', { minimumFractionDigits: decimals(ref ?? p), maximumFractionDigits: decimals(ref ?? p) });
 const money = (v, sign = false) => v == null ? '—' : (sign && v > 0 ? '+' : '') + Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fr = (v, d = 2) => v == null ? '—' : `${v > 0 ? '+' : ''}${Number(v).toFixed(d)}`;
 const pct = (v) => v == null ? '—' : `${v}%`;
 const when = (ms) => new Date(ms).toLocaleString('fa-IR', { dateStyle: 'medium', timeStyle: 'short' });
 const sideFa = (s) => (s > 0 ? 'خرید' : 'فروش');
@@ -79,6 +80,14 @@ function ticket(sig, { price = null, extra = '', clickable = false } = {}) {
       <span class="muted">اختلاف با بایننس <b class="num">${sig.lbank_diff_pct > 0 ? '+' : ''}${sig.lbank_diff_pct}%</b></span></div>` : ''}
     ${extra}
   </article>`;
+}
+
+function signalOutcome(sig) {
+  if (!sig.status || sig.status === 'new') return '<div class="t-result muted">منتظر ورود در کندل بعد</div>';
+  if (sig.status === 'void') return '<div class="t-result muted">باطل شد: قیمت قبل از ورود از سطوح عبور کرد</div>';
+  if (sig.status === 'active') return `<div class="t-result">فعال${sig.tp1_hit ? '؛ TP1 گرفته شد و حد ضرر روی ورود است' : ''}</div>`;
+  const cls = sig.result_r > 0 ? 'pos' : sig.result_r < 0 ? 'neg' : 'muted';
+  return `<div class="t-result">نتیجهٔ سیگنال: ${EXIT_FA[sig.exit_reason] || sig.exit_reason}، <b class="num ${cls}">${fr(sig.result_r)}R</b></div>`;
 }
 
 function paperOutcome(sig) {
@@ -154,7 +163,7 @@ async function loadChart(fit = true) {
   $('#c-regime').textContent = sym && sym.regime_1h ? `بازار ۱ساعته: ${REGIME_FA[sym.regime_1h] || sym.regime_1h}` : '';
   $('#c-count').textContent = sigs.length ? `${sigs.length} سیگنال` : '';
   $('#c-tickets').innerHTML = sigs.length
-    ? sigs.map((s) => ticket(s, { price: state.lastPrice, extra: paperOutcome(s), clickable: true })).join('')
+    ? sigs.map((s) => ticket(s, { price: state.lastPrice, extra: signalOutcome(s) + paperOutcome(s), clickable: true })).join('')
     : `<div class="empty"><b>برای ${esc(state.symbol)} هنوز سیگنالی ثبت نشده.</b>هر وقت چند سبک هم‌زمان فرصتی ببینند، اینجا و روی نمودار ظاهر می‌شود.</div>`;
 }
 
@@ -177,7 +186,7 @@ function selectSymbol(sym, signalId = null) {
 async function loadSignals() {
   const sigs = await api('/api/signals?limit=100');
   $('#s-tickets').innerHTML = sigs.length
-    ? sigs.map((s) => ticket(s, { extra: paperOutcome(s), clickable: true })).join('')
+    ? sigs.map((s) => ticket(s, { extra: signalOutcome(s) + paperOutcome(s), clickable: true })).join('')
     : `<div class="empty"><b>هنوز سیگنالی صادر نشده.</b>موتور هر ۱۵ دقیقه ارزها را بررسی می‌کند و فقط وقتی دو سبک یا بیشتر هم‌نظر باشند سیگنال می‌دهد؛ ممکن است چند ساعت طول بکشد.</div>`;
 }
 
@@ -249,7 +258,6 @@ async function startPaper(form, errEl) {
 // ---- backtest view -------------------------------------------------------
 let btChart, btSeries;
 const SIDE_KEY_FA = { long: 'خرید', short: 'فروش' };
-const fr = (v, d = 2) => v == null ? '—' : `${v > 0 ? '+' : ''}${Number(v).toFixed(d)}`;
 function initBacktestChart() {
   btChart = LightweightCharts.createChart($('#b-equity'), {
     layout: { background: { color: C.surface }, textColor: C.muted, fontFamily: 'Vazirmatn, Tahoma, sans-serif' },
@@ -308,6 +316,32 @@ async function loadBacktest(id) {
   $('#b-caveats').textContent = 'محدودیت‌ها: فهرست ارزها همان فهرست امروز است (ارزهایی که از فهرست خارج شده‌اند در آزمون نیستند)؛ قیمت‌ها از بایننس است؛ اگر یک کندل ۱۵ دقیقه‌ای هم حد ضرر و هم هدف را لمس کند، ضرر فرض شده است.';
 }
 
+// ---- telegram ------------------------------------------------------------
+async function openTelegram() {
+  const dlg = $('#tg-dialog'), body = $('#tg-body');
+  dlg.showModal();
+  body.innerHTML = '<p class="muted">در حال بارگذاری…</p>';
+  const t = await api('/api/telegram');
+  if (t.linked) {
+    body.innerHTML = `<p class="linked"><i></i>به تلگرام ${t.telegram_name ? '<b>@' + esc(t.telegram_name) + '</b>' : ''} وصل است.</p>
+      <p class="muted">سیگنال‌ها و به‌روزرسانی‌ها (TP1، حد ضرر، هدف نهایی) در تلگرام می‌آیند. ${t.notify ? '' : 'اعلان‌ها خاموش است؛ در بات /on را بفرستید.'}</p>
+      <button type="button" class="btn quiet" id="tg-unlink">قطع اتصال</button>`;
+    $('#tg-unlink').onclick = async () => { await api('/api/telegram/unlink', { method: 'POST' }); openTelegram(); };
+    return;
+  }
+  if (!t.bot_username) {
+    body.innerHTML = '<p>بات تلگرام هنوز روی سرور راه‌اندازی نشده است.</p><p class="muted">مدیر سیستم باید توکن بات را در تنظیمات سرور وارد کند.</p>';
+    return;
+  }
+  body.innerHTML = `<ol><li>دکمهٔ زیر را بزنید تا تلگرام باز شود.</li><li>در بات، دکمهٔ Start را بزنید.</li><li>پیام «اتصال انجام شد» می‌آید.</li></ol>
+    <button type="button" class="btn" id="tg-make">باز کردن بات و اتصال</button>
+    <p class="muted small">لینک اتصال ۳۰ دقیقه اعتبار دارد و فقط برای حساب شماست.</p>`;
+  $('#tg-make').onclick = async () => {
+    try { const r = await api('/api/telegram/link', { method: 'POST' }); window.open(r.link, '_blank', 'noopener'); }
+    catch (e) { body.insertAdjacentHTML('beforeend', `<p class="form-error">${esc(e.message)}</p>`); }
+  };
+}
+
 // ---- shell ---------------------------------------------------------------
 function showError(e) { if (e.message !== 'unauthorized') console.error(e); }
 
@@ -355,6 +389,7 @@ function bind() {
     const v = location.hash.slice(1);
     if (['chart', 'signals', 'paper', 'backtest'].includes(v)) showView(v);
   });
+  $('#tg-open').addEventListener('click', () => openTelegram().catch(showError));
   $('#logout').addEventListener('click', async () => { await api('/api/logout', { method: 'POST' }); location.href = '/login'; });
 }
 

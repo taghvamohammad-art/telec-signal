@@ -201,3 +201,36 @@ ALTER TABLE signal_candidates ADD COLUMN IF NOT EXISTS lbank_entry      double p
 ALTER TABLE signal_candidates ADD COLUMN IF NOT EXISTS lbank_stop       double precision;
 ALTER TABLE signal_candidates ADD COLUMN IF NOT EXISTS lbank_tp1        double precision;
 ALTER TABLE signal_candidates ADD COLUMN IF NOT EXISTS lbank_tp2        double precision;
+
+-- ---- signal lifecycle (global, independent of paper accounts) ----------
+ALTER TABLE signal_candidates ADD COLUMN IF NOT EXISTS fill_price  double precision;
+ALTER TABLE signal_candidates ADD COLUMN IF NOT EXISTS stop_now    double precision;
+ALTER TABLE signal_candidates ADD COLUMN IF NOT EXISTS tp1_hit     boolean NOT NULL DEFAULT false;
+ALTER TABLE signal_candidates ADD COLUMN IF NOT EXISTS last_bar    timestamptz;
+ALTER TABLE signal_candidates ADD COLUMN IF NOT EXISTS exit_reason text;
+ALTER TABLE signal_candidates ADD COLUMN IF NOT EXISTS closed_at   timestamptz;
+ALTER TABLE signal_candidates ADD COLUMN IF NOT EXISTS result_r    double precision;
+ALTER TABLE signal_candidates ADD COLUMN IF NOT EXISTS published   boolean;   -- sent to Telegram (false = over daily cap)
+
+CREATE TABLE IF NOT EXISTS signal_events (
+    id            bigserial   PRIMARY KEY,
+    candidate_id  bigint      NOT NULL REFERENCES signal_candidates(id) ON DELETE CASCADE,
+    kind          text        NOT NULL,   -- new | active | tp1 | tp2 | stop | breakeven | void
+    created_at    timestamptz NOT NULL DEFAULT now(),
+    payload       jsonb       NOT NULL DEFAULT '{}',
+    sent_at       timestamptz,
+    UNIQUE (candidate_id, kind)
+);
+CREATE INDEX IF NOT EXISTS signal_events_unsent_idx ON signal_events (id) WHERE sent_at IS NULL;
+
+-- ---- Telegram linking ----------------------------------------------------
+ALTER TABLE users ADD COLUMN IF NOT EXISTS telegram_chat_id  bigint UNIQUE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS telegram_name     text;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS tg_link_code      text;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS tg_link_expires   timestamptz;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS notify            boolean NOT NULL DEFAULT true;
+
+CREATE TABLE IF NOT EXISTS app_settings (
+    key    text PRIMARY KEY,
+    value  text NOT NULL
+);

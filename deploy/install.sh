@@ -142,7 +142,7 @@ fetch "$VENDOR/Vazirmatn.woff2" \
   || warn "font download failed; falling back to Tahoma"
 
 say "systemd services"
-SERVICES=(telec-data telec-analysis telec-web)
+SERVICES=(telec-data telec-analysis telec-web telec-bot)
 for svc in "${SERVICES[@]}"; do
   sed "s#__APP_DIR__#${APP_DIR}#g" "$APP_DIR/deploy/${svc}.service" > "/etc/systemd/system/${svc}.service"
 done

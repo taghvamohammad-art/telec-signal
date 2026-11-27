@@ -163,6 +163,31 @@ async def api_backtest(request: Request) -> Response:
     return JSONResponse(run) if run else JSONResponse({"error": "not found"}, status_code=404)
 
 
+async def api_telegram(request: Request) -> Response:
+    user = await current_user(request)
+    if user is None:
+        return _unauth()
+    return JSONResponse(await request.app.state.repo.telegram(user["id"]))
+
+
+async def api_telegram_link(request: Request) -> Response:
+    user = await current_user(request)
+    if user is None:
+        return _unauth()
+    link = await request.app.state.repo.telegram_link(user["id"], new_token()[:24].replace("-", "x").replace("_", "y"))
+    if not link:
+        return JSONResponse({"error": "بات تلگرام هنوز راه‌اندازی نشده است. توکن بات را در تنظیمات سرور وارد کنید."}, status_code=409)
+    return JSONResponse({"link": link})
+
+
+async def api_telegram_unlink(request: Request) -> Response:
+    user = await current_user(request)
+    if user is None:
+        return _unauth()
+    await request.app.state.repo.telegram_unlink(user["id"])
+    return JSONResponse({"ok": True})
+
+
 def create_app(repo_factory=None) -> Starlette:
     @contextlib.asynccontextmanager
     async def lifespan(app: Starlette):
@@ -194,6 +219,9 @@ def create_app(repo_factory=None) -> Starlette:
         Route("/api/paper", api_paper),
         Route("/api/paper/reset", api_paper_reset, methods=["POST"]),
         Route("/api/backtests", api_backtests),
+        Route("/api/telegram", api_telegram),
+        Route("/api/telegram/link", api_telegram_link, methods=["POST"]),
+        Route("/api/telegram/unlink", api_telegram_unlink, methods=["POST"]),
         Route("/api/backtests/{run_id:int}", api_backtest),
         Mount("/static", StaticFiles(directory=STATIC), name="static"),
     ]

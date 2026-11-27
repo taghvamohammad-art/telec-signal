@@ -68,8 +68,14 @@ class DataEngine:
     async def refresh_universe(self) -> bool:
         """Returns True when the analysis set changed."""
         info, tickers = await asyncio.gather(self.binance.exchange_info(), self.binance.tickers_24h())
-        lb_markets = await self.lbank.swap_markets() if self.lbank else {}
-        cands, lb_idx = binance_candidates(info, tickers), lbank_index(lb_markets)
+        cands = binance_candidates(info, tickers)
+        try:
+            lb_idx = lbank_index(await self.lbank.swap_markets()) if self.lbank else {}
+        except Exception as exc:
+            # LBank down: keep yesterday's mapping instead of failing (or emptying the universe)
+            lb_idx = await self.store.last_lbank_index()
+            log.warning("LBank markets unavailable (%s); using %d stored mappings", exc, len(lb_idx))
+            await self.alerts.send("lbank_markets", f"فهرست بازارهای ال‌بانک دریافت نشد؛ از فهرست قبلی استفاده شد ({exc})")
         universe = build_universe(cands, lb_idx, self.cfg.universe_size, self.cfg.require_lbank)
         if not universe:
             await self.alerts.send("universe_empty", "فهرست ارزها خالی شد؛ اتصال بایننس/ال‌بانک را بررسی کنید")

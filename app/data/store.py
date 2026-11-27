@@ -108,6 +108,14 @@ class Store:
                     rows,
                 )
 
+    async def last_lbank_index(self) -> dict[str, str]:
+        """base -> LBank symbol from the latest stored universe (fallback when LBank is unreachable)."""
+        async with self.pool.acquire() as con:
+            rows = await con.fetch(
+                """SELECT base, lbank_symbol FROM universe_snapshots
+                   WHERE day=(SELECT max(day) FROM universe_snapshots) AND lbank_symbol IS NOT NULL""")
+        return {r["base"]: r["lbank_symbol"] for r in rows}
+
     # ---- admin-added coins ---------------------------------------------
     async def custom_inputs(self) -> list[str]:
         async with self.pool.acquire() as con:

@@ -12,6 +12,9 @@ class LBankFutures:
         import ccxt.async_support as ccxt  # imported lazily so tests run without ccxt
 
         self._ex = ccxt.lbank({"enableRateLimit": True, "options": {"defaultType": "swap"}})
+        # load_markets() would also call fetchCurrencies (spot withdraw config endpoint),
+        # which is unrelated to futures and sometimes down; we only need markets.
+        self._ex.has["fetchCurrencies"] = False
 
     async def close(self) -> None:
         await self._ex.close()

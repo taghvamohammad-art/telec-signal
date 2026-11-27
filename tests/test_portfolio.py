@@ -82,3 +82,22 @@ def test_service_run_creates_and_continues_books():
         assert days == sorted(set(days)) and len(days) == 4, (k, days)
     ex = svc.state[("combo_top", "exec")]["positions"]
     assert set(ex) <= set(list(d)[:40])        # executable book holds only coins listed on "LBank"
+
+
+def test_engine_backtest_simulation_matches_ideal_returns():
+    import sys
+    import types
+
+    sys.modules.setdefault("httpx", types.ModuleType("httpx"))
+    from app.portfolio.backtest import simulate
+
+    d, f = market(11, n=60, days=600)
+    c = build_ctx(d, f)
+    w = combo_weights(member_weights(c), "combo_top")
+    sim = simulate(c, w, None, 0.0)
+    book_ret = sim["equity"].pct_change().dropna()
+    lab = pnl(c, w, 0.001)["ret"].reindex(book_ret.index)
+    # dollar book and weight-based returns differ only by compounding inside the day: tiny
+    assert (book_ret - lab).abs().max() < 2e-3
+    ex = simulate(c, w, set(list(d)[:30]), 5.0)
+    assert ex["dropped"].sum() > 0

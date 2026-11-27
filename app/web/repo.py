@@ -103,6 +103,15 @@ class WebRepo:
                             "closed": sorted(k for k in before if k not in pos)})
         return out
 
+    async def portfolio_backtest(self) -> dict | None:
+        async with self.s.pool.acquire() as con:
+            r = await con.fetchrow("""SELECT id, created_at, summary, curve FROM backtest_runs
+                                      WHERE params->>'kind'='portfolio' ORDER BY id DESC LIMIT 1""")
+        if r is None:
+            return None
+        load = lambda v: json.loads(v) if isinstance(v, str) else v  # noqa: E731
+        return {"id": r["id"], "created_at": dt_to_ms(r["created_at"]), "summary": load(r["summary"]), "curves": load(r["curve"])}
+
     # ---- server operations --------------------------------------------
     async def ops_jobs(self, limit: int = 30) -> list[dict]:
         async with self.s.pool.acquire() as con:
@@ -239,7 +248,7 @@ class WebRepo:
     # ---- backtests ----------------------------------------------------
     async def backtests(self) -> list[dict]:
         async with self.s.pool.acquire() as con:
-            rows = await con.fetch("SELECT id, created_at, params, summary FROM backtest_runs WHERE coalesce(params->>'kind', '') NOT IN ('trend', 'intraday', 'crowding', 'lab') ORDER BY id DESC LIMIT 20")
+            rows = await con.fetch("SELECT id, created_at, params, summary FROM backtest_runs WHERE coalesce(params->>'kind', '') NOT IN ('trend', 'intraday', 'crowding', 'lab', 'portfolio') ORDER BY id DESC LIMIT 20")
         out = []
         for r in rows:
             s = json.loads(r["summary"]) if isinstance(r["summary"], str) else r["summary"]

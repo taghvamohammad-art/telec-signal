@@ -136,6 +136,8 @@ KINDS: dict[str, JobKind] = {k.key: k for k in [
             "سه ترکیب (combo_top، combo_trend، combo_all_pos) و btc_ma50، tsmom_regime، tsmom_14.", "بک‌تست", timeout_s=2 * 3600),
     JobKind("portfolio_run", "اجرای پرتفوی همین حالا", "داده‌های روز را می‌گیرد و پرتفوی آزمایشی را به‌روز می‌کند (اگر امروز انجام نشده).", "داده",
             timeout_s=3600),
+    JobKind("portfolio_backtest", "بک‌تست موتور پرتفوی", "همان حساب‌های ۳۰۰۰ دلاری (اجرایی و ایده‌آل) را روز به روز روی کل تاریخچه اجرا می‌کند.",
+            "بک‌تست", timeout_s=2 * 3600),
     JobKind("whales_once", "نمونهٔ پوزیشن نهنگ‌ها", "یک بار پوزیشن نهنگ‌های Hyperliquid را می‌خواند و خلاصه می‌دهد.", "داده",
             timeout_s=600),
 ]}
@@ -192,6 +194,8 @@ def build_steps(key: str, p: dict, app_dir: str) -> list[Step]:
                       "btc_ma50", "tsmom_regime", "tsmom_14"))]
     if key == "portfolio_run":
         return [Step((PY, "-m", "app.portfolio.service", "--once"))]
+    if key == "portfolio_backtest":
+        return [Step((PY, "-m", "app.portfolio.backtest"))]
     if key == "whales_once":
         return [Step((PY, "-m", "app.whales.collector", "--once"))]
     raise InvalidParams("کار ناشناخته")

@@ -392,7 +392,7 @@ async function openTelegram() {
 
 // ---- live portfolio test -------------------------------------------------
 const COMBO_FA = { combo_all_pos: 'ترکیب کامل (۱۸ سبک)', combo_top: 'ترکیب منتخب (۶ سبک)' };
-const pf = { data: [], combo: 'combo_all_pos', chart: null, exec: null, ideal: null };
+const pf = { data: [], combo: 'combo_all_pos', chart: null, exec: null, ideal: null, bt: null, btChart: null, btExec: null, btIdeal: null };
 
 function initPortfolioChart() {
   pf.chart = LightweightCharts.createChart($('#pf-chart'), {
@@ -403,10 +403,18 @@ function initPortfolioChart() {
   pf.ideal = pf.chart.addLineSeries({ color: C.muted, lineWidth: 1, lineStyle: 2 });
   pf.exec = pf.chart.addAreaSeries({ lineColor: C.saffron, topColor: 'rgba(233,180,76,.25)', bottomColor: 'rgba(233,180,76,0)', lineWidth: 2 });
   new ResizeObserver(() => pf.chart.applyOptions({ width: $('#pf-chart').clientWidth, height: $('#pf-chart').clientHeight })).observe($('#pf-chart'));
+  pf.btChart = LightweightCharts.createChart($('#pf-bt-chart'), {
+    layout: { background: { color: C.surface }, textColor: C.muted, fontFamily: 'Vazirmatn, Tahoma, sans-serif' },
+    grid: { vertLines: { visible: false }, horzLines: { color: 'rgba(44,53,86,.45)' } },
+    rightPriceScale: { borderVisible: false, mode: 1 }, timeScale: { borderVisible: false },
+  });
+  pf.btIdeal = pf.btChart.addLineSeries({ color: C.muted, lineWidth: 1, lineStyle: 2 });
+  pf.btExec = pf.btChart.addLineSeries({ color: C.saffron, lineWidth: 2 });
+  new ResizeObserver(() => pf.btChart.applyOptions({ width: $('#pf-bt-chart').clientWidth, height: $('#pf-bt-chart').clientHeight })).observe($('#pf-bt-chart'));
 }
 
 async function loadPortfolio() {
-  pf.data = await api('/api/portfolio');
+  [pf.data, pf.bt] = await Promise.all([api('/api/portfolio'), api('/api/portfolio/backtest').catch(() => null)]);
   $('#pf-empty').classList.toggle('hidden', pf.data.length > 0);
   $('#pf-main').classList.toggle('hidden', pf.data.length === 0);
   const combos = [...new Set(pf.data.map((b) => b.combo))];
@@ -435,6 +443,7 @@ function renderPortfolio() {
   $('#pf-books').innerHTML = bookCard(exec, 'اجرایی روی ال‌بانک (۳٬۰۰۰ دلار)') + bookCard(ideal, 'ایده‌آل، مثل بک‌تست');
   const pts = (b) => (b ? b.curve.map((p) => ({ time: Math.floor(p.t / 1000), value: p.equity })) : []);
   pf.exec.setData(pts(exec)); pf.ideal.setData(pts(ideal)); pf.chart.timeScale().fitContent();
+  renderPortfolioBacktest();
   const book = exec || ideal;
   const eq = book ? book.equity : 1;
   $('#pf-count').textContent = book ? book.positions.length : '';
@@ -454,6 +463,25 @@ function renderPortfolio() {
       <td class="${sideCls(side)}">${sideFa(side)}</td><td class="num">${money(Math.abs(p.notional))}</td>
       <td class="num">${((Math.abs(p.notional) / eq) * 100).toFixed(1)}%</td><td>${chg}</td></tr>`;
   }).join('') : '<tr><td colspan="5" class="muted">پوزیشن بازی نیست.</td></tr>';
+}
+
+function renderPortfolioBacktest() {
+  const bt = pf.bt;
+  $('#pf-bt').classList.toggle('hidden', !bt);
+  if (!bt) return;
+  const pts = (k) => (bt.curves[k] || []).map(([t, v]) => ({ time: Math.floor(t / 1000), value: v }));
+  pf.btExec.setData(pts(`${pf.combo}:exec`)); pf.btIdeal.setData(pts(`${pf.combo}:ideal`)); pf.btChart.timeScale().fitContent();
+  const s = bt.summary;
+  $('#pf-bt-note').textContent = `اجرا شده ${when(bt.created_at)}. محور قیمت لگاریتمی است. «دورهٔ قفل» از ۲۰۲۵ به بعد است که موقع انتخاب سبک‌ها دیده نشده بود. `
+    + `از ${s.coins} ارز بایننس، ${s.lbank_listed} ارز امروز در ال‌بانک هست؛ همین فهرست امروز برای کل گذشته به کار رفته.`;
+  const PER = { discovery: 'تا ۲۰۲۴', holdout: 'دورهٔ قفل' };
+  $('#pf-bt-rows').innerHTML = ['exec', 'ideal'].flatMap((mode) => ['discovery', 'holdout'].map((per) => {
+    const r = (s.books[`${pf.combo}:${mode}`] || {})[per] || {};
+    const cls = (v) => (v > 0 ? 'pos' : v < 0 ? 'neg' : '');
+    return `<tr><td>${mode === 'exec' ? 'اجرایی' : 'ایده‌آل'}</td><td>${PER[per]}</td>
+      <td class="num">${r.sharpe ?? '—'}</td><td class="num ${cls(r.cagr)}">${r.cagr ?? '—'}%</td>
+      <td class="num neg">${r.max_dd ?? '—'}%</td><td class="num ${cls(r.total)}">${r.total ?? '—'}%</td></tr>`;
+  })).join('');
 }
 
 // ---- server operations (admin) --------------------------------------------

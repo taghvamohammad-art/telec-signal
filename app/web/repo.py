@@ -206,7 +206,7 @@ class WebRepo:
     # ---- backtests ----------------------------------------------------
     async def backtests(self) -> list[dict]:
         async with self.s.pool.acquire() as con:
-            rows = await con.fetch("SELECT id, created_at, params, summary FROM backtest_runs WHERE coalesce(params->>'kind', '') NOT IN ('trend', 'intraday', 'crowding') ORDER BY id DESC LIMIT 20")
+            rows = await con.fetch("SELECT id, created_at, params, summary FROM backtest_runs WHERE coalesce(params->>'kind', '') NOT IN ('trend', 'intraday', 'crowding', 'lab') ORDER BY id DESC LIMIT 20")
         out = []
         for r in rows:
             s = json.loads(r["summary"]) if isinstance(r["summary"], str) else r["summary"]

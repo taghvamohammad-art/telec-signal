@@ -74,7 +74,7 @@ class DataEngine:
         if not universe:
             await self.alerts.send("universe_empty", "فهرست ارزها خالی شد؛ اتصال بایننس/ال‌بانک را بررسی کنید")
             return False
-        analysis = select_analysis_set(universe, self.cfg.analysis_size, self.cfg.always_include)
+        analysis = select_analysis_set(universe, self.cfg.analysis_size, self.cfg.always_include, self.cfg.selection_volatility_weight)
         await self.store.save_universe(datetime.now(timezone.utc).date(), universe, analysis)
         changed = set(analysis) != set(self.analysis)
         self.analysis = analysis

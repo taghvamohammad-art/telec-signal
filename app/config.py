@@ -38,6 +38,7 @@ class Settings:
     analysis_size: int = field(default_factory=lambda: _env_int("ANALYSIS_SIZE", 40))
     timeframes: list[str] = field(default_factory=lambda: _env_list("TIMEFRAMES", "15m,1h,4h,1d"))
     require_lbank: bool = field(default_factory=lambda: _env_bool("REQUIRE_LBANK", True))
+    selection_volatility_weight: float = field(default_factory=lambda: float(_env("SELECTION_VOLATILITY_WEIGHT", "0")))
     always_include: list[str] = field(default_factory=lambda: _env_list("ALWAYS_INCLUDE", "BTCUSDT,ETHUSDT"))
 
     # History

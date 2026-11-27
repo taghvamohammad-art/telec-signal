@@ -94,8 +94,11 @@ def build_universe(candidates: list[dict], lbank: dict[str, str], size: int, req
     return out
 
 
-def select_analysis_set(universe: list[UniverseEntry], n: int, always: list[str]) -> list[str]:
-    """Pick n symbols for full analysis: 70% liquidity rank + 30% volatility rank.
+def select_analysis_set(universe: list[UniverseEntry], n: int, always: list[str], volatility_weight: float = 0.0) -> list[str]:
+    """Pick n symbols for full analysis by liquidity rank, optionally blended with volatility rank.
+
+    Default is liquidity only: volatile small caps mostly ended up "chaotic" and
+    unusable while pushing out larger coins (seen on the live server, 2026-11-27).
 
     Extreme volatility is capped so a single pump does not dominate the pick.
     Symbols in `always` (e.g. BTC, ETH) are included first when present.
@@ -113,7 +116,7 @@ def select_analysis_set(universe: list[UniverseEntry], n: int, always: list[str]
 
     liq = pct_rank([math.log10(max(u.quote_volume_24h, 1.0)) for u in universe])
     vol = pct_rank([min(u.range_pct_24h, 25.0) for u in universe])
-    scored = sorted(range(k), key=lambda i: 0.7 * liq[i] + 0.3 * vol[i], reverse=True)
+    scored = sorted(range(k), key=lambda i: (1 - volatility_weight) * liq[i] + volatility_weight * vol[i], reverse=True)
 
     present = {u.symbol for u in universe}
     picked = [s for s in always if s in present][:n]

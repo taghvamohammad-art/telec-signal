@@ -186,3 +186,13 @@ def test_backfill_records_unfillable_gap():
     res = asyncio.run(sync_symbol_tf(client, store, "BTCUSDT", "15m", now, backfill_days=1))
     assert res.gaps_left == [(T0 + 2 * M15, T0 + 2 * M15)]
     assert "gap_unfilled" in store.issues
+
+
+def test_select_analysis_set_volume_only_by_default():
+    uni = [
+        UniverseEntry("BIGUSDT", "BIG", 1, 1e9, 1.0, True, None),
+        UniverseEntry("PUMPXUSDT", "PUMPX", 1, 1e7, 40.0, True, None),
+        UniverseEntry("MIDUSDT", "MID", 1, 1e8, 2.0, True, None),
+    ]
+    assert select_analysis_set(uni, 2, []) == ["BIGUSDT", "MIDUSDT"]
+    assert "PUMPXUSDT" in select_analysis_set(uni, 2, [], volatility_weight=0.9)

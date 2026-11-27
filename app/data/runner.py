@@ -195,6 +195,8 @@ class DataEngine:
 async def main() -> None:
     cfg = load_settings()
     logging.basicConfig(level=cfg.log_level, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    for noisy in ("httpx", "httpcore", "websockets", "ccxt"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
     engine = DataEngine(cfg)
     task = asyncio.create_task(engine.run_forever())
     started = asyncio.Event()

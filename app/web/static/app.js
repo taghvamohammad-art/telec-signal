@@ -5,7 +5,7 @@ const C = { ink: '#151a2e', surface: '#1d2440', line: '#2c3556', text: '#ece8de'
             long: '#3bbf9a', short: '#ef6b6b', saffron: '#e9b44c' };
 const TF_MS = { '15m': 9e5, '1h': 36e5, '4h': 144e5, '1d': 864e5 };
 const TZ = -new Date().getTimezoneOffset() * 60; // chart shows the viewer's local time
-const STYLE_FA = { trend_pullback: 'پولبک روندی', breakout: 'شکست محدوده', mean_reversion: 'برگشت به میانگین',
+const STYLE_FA = { htf_momentum: 'مومنتوم ۴ساعته', trend_pullback: 'پولبک روندی', breakout: 'شکست محدوده', mean_reversion: 'برگشت به میانگین',
                    liquidity_sweep: 'شکار نقدینگی', divergence: 'واگرایی RSI', vwap_volume: 'VWAP و حجم' };
 const REGIME_FA = { trend_up: 'روند صعودی', trend_down: 'روند نزولی', range: 'رنج', squeeze: 'فشرده', chaotic: 'آشفته' };
 const EXIT_FA = { stop: 'حد ضرر خورد', breakeven: 'سربه‌سر بسته شد', tp1: 'TP1', tp2: 'به هدف TP2 رسید' };
@@ -302,7 +302,8 @@ async function loadBacktest(id) {
   btChart.timeScale().fitContent();
   const split = (k, label) => { const v = s.signal_r[k]; return `<tr><td>${label}</td><td class="num">${v.n}</td><td class="num">${v.n ? v.win_rate + '%' : '—'}</td>
     <td class="num ${v.avg_r > 0 ? 'pos' : 'neg'}">${fr(v.avg_r, 3)}</td><td class="num">${fr(v.total_r)}</td><td class="num">${v.profit_factor ?? '—'}</td></tr>`; };
-  $('#b-split').innerHTML = split('in_sample', 'داخل نمونه (اول دوره)') + split('out_of_sample', 'خارج نمونه (آخر دوره)');
+  $('#b-split').innerHTML = split('in_sample', 'داخل نمونه (اول دوره)') + split('out_of_sample', 'خارج نمونه (آخر دوره)')
+    + (s.signal_r.unseen && s.signal_r.unseen.n ? split('unseen', `دیده‌نشده در طراحی (قبل از ${when(s.signal_r.unseen_before)})`) : '');
   $('#b-style').innerHTML = rows(s.signal_r.by_style, (k) => STYLE_FA[k] || k);
   $('#b-score').innerHTML = rows(s.signal_r.by_score);
   $('#b-regime').innerHTML = rows(s.signal_r.by_regime, (k) => REGIME_FA[k] || k);
@@ -310,7 +311,7 @@ async function loadBacktest(id) {
   $('#b-count').textContent = b.signals.length ? `${b.signals.length} مورد آخر` : '';
   $('#b-signals').innerHTML = b.signals.map((x) => `<tr data-symbol="${esc(x.symbol)}"><td>${when(x.bar_time + TF_MS['15m'])}</td><td>${esc(x.symbol)}</td>
     <td class="side ${sideCls(x.side)}">${sideFa(x.side)}</td><td class="num">${Math.round(x.score)}</td>
-    <td>${(x.styles || []).filter((v) => v.core !== false).map((v) => STYLE_FA[v.style] || v.style).join('، ')}</td>
+    <td>${(x.styles || []).filter((v) => (v.role || (v.core === false ? 'confirm' : 'anchor')) !== 'info').map((v) => STYLE_FA[v.style] || v.style).join('، ')}</td>
     <td>${x.status === 'closed' ? (EXIT_FA[x.exit_reason] || x.exit_reason) : x.status === 'open' ? 'باز' : 'پر نشد'}</td>
     <td class="num ${x.r > 0 ? 'pos' : x.r < 0 ? 'neg' : ''}">${x.status === 'closed' ? fr(x.r) : '—'}</td></tr>`).join('');
   $('#b-caveats').textContent = 'محدودیت‌ها: فهرست ارزها همان فهرست امروز است (ارزهایی که از فهرست خارج شده‌اند در آزمون نیستند)؛ قیمت‌ها از بایننس است؛ اگر یک کندل ۱۵ دقیقه‌ای هم حد ضرر و هم هدف را لمس کند، ضرر فرض شده است.';

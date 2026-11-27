@@ -9,6 +9,8 @@ import pandas as pd
 from app.analysis.indicators import add_indicators
 from app.analysis.regime import Regime, classify, htf_bias
 from app.analysis.scoring import STRONG, Candidate, build_candidate, market_factor
+
+NO_TRADE_REGIMES = {Regime.CHAOTIC, Regime.RANGE}  # range: worst result in the first backtest
 from app.analysis.strategies import Context, collect_votes
 from app.core.timeframes import tf_ms
 
@@ -88,26 +90,28 @@ def evaluate(
     funding: float | None = None,
     weights: dict[str, float] | None = None,
     f_news: float = 1.0,
+    regime: Regime | None = None,
+    bias: int | None = None,
 ) -> tuple[Candidate | None, Diagnosis]:
     """Decision on frames that already carry indicators and contain only closed bars.
 
     Shared by the live engine and the backtest so both use identical rules.
     btc_ctx: (regime, move) or a zero-argument callable returning it (computed only when needed).
     """
-    regime = classify(prep["1h"])
-    bias = htf_bias(prep["4h"])
+    regime = classify(prep["1h"]) if regime is None else regime
+    bias = htf_bias(prep["4h"]) if bias is None else bias
     ctx = Context(symbol, prep["15m"], prep["1h"], prep["4h"], prep["1d"], regime, bias)
     votes = collect_votes(ctx)
     diag = Diagnosis(symbol, regime.value, bias, votes, "")
-    if regime == Regime.CHAOTIC:
-        diag.result = "chaotic"
+    if regime in NO_TRADE_REGIMES:
+        diag.result = regime.value
         return None, diag
     if not votes:
         diag.result = "no_votes"
         return None, diag
 
     btc_reg, btc_move = btc_ctx() if callable(btc_ctx) else btc_ctx
-    strong_sides = {v.side for v in votes if v.core and v.s >= STRONG}
+    strong_sides = {v.side for v in votes if v.role == "anchor" and v.s >= STRONG}
     side = next(iter(strong_sides)) if len(strong_sides) == 1 else max(votes, key=lambda v: v.s).side
     f_mkt, notes = market_factor(side, btc_reg, btc_move, funding, symbol == "BTCUSDT")
     entry = float(prep["15m"]["close"].iloc[-1])

@@ -1,14 +1,16 @@
 """Analysis styles. Each looks at the last CLOSED bars and returns a vote or None.
 
 A vote: side (+1 long / -1 short), strength s in [0, 1], a structural stop, and a
-short reason. Only "core" styles count toward the independent-confirmation rule;
-filter styles (VWAP/volume) add to the score but cannot make a signal on their own.
+short reason. Each style has a role (STYLE_ROLE):
+  anchor  - can start a signal (trend styles that were profitable in the backtest)
+  confirm - adds confirmation and score, never starts a signal
+  info    - shown for context only, no effect on decisions (were unprofitable)
 """
 
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import pandas as pd
 
@@ -22,7 +24,8 @@ class Vote:
     s: float
     stop: float | None
     reason: str
-    core: bool = True
+    core: bool = True  # kept for stored rows / UI: True for anchors
+    role: str = "anchor"
 
 
 @dataclass
@@ -187,7 +190,46 @@ def vwap_volume(ctx: Context) -> Vote | None:
     return Vote("vwap_volume", side, round(s, 3), None, "قیمت " + ("بالای" if side > 0 else "زیر") + " VWAP روزانه", core=False)
 
 
-ALL_STYLES = (trend_pullback, breakout, mean_reversion, liquidity_sweep, divergence, vwap_volume)
+# ---- 6. higher-timeframe momentum (Donchian 55 on 4h, "turtle" breakout) --
+def htf_momentum(ctx: Context) -> Vote | None:
+    """New 55-bar 4h high/low on the 4h close, in the direction of the daily trend.
+
+    Fires only on the 15m bar that closes together with the 4h bar, so one
+    breakout gives one vote.
+    """
+    h4, d1, m = ctx.h4, ctx.d1, ctx.m15
+    if len(h4) < 60 or ctx.regime_1h == Regime.CHAOTIC:
+        return None
+    if int(m.index[-1]) + 900_000 != int(h4.index[-1]) + 14_400_000:
+        return None
+    last, prev, day, h1 = h4.iloc[-1], h4.iloc[-2], d1.iloc[-1], ctx.h1.iloc[-1]
+    if not _ok(last["dc55_hi"], last["dc55_lo"], last["atr"], day["ema50"], h1["atr"]):
+        return None
+    if last["close"] > last["dc55_hi"] and prev["close"] <= prev["dc55_hi"] and day["close"] > day["ema50"]:
+        side, level = 1, last["dc55_hi"]
+    elif last["close"] < last["dc55_lo"] and prev["close"] >= prev["dc55_lo"] and day["close"] < day["ema50"]:
+        side, level = -1, last["dc55_lo"]
+    else:
+        return None
+    push = abs(last["close"] - level) / last["atr"]
+    adx_d = day["adx"] if _ok(day["adx"]) else 20.0
+    s = 0.4 * _clip((last["rvol"] if _ok(last["rvol"]) else 1.0) / 2) + 0.3 * _clip(push / 0.8) + 0.3 * _clip(adx_d / 40)
+    stop = level - side * 1.0 * h1["atr"]
+    return Vote("htf_momentum", side, round(s, 3), float(stop),
+                f"شکست {'سقف' if side > 0 else 'کف'} ۵۵ کندل ۴ساعته در جهت روند روزانه")
+
+
+STYLE_ROLE = {
+    "trend_pullback": "anchor",
+    "breakout": "anchor",
+    "htf_momentum": "anchor",
+    "liquidity_sweep": "confirm",
+    "vwap_volume": "confirm",
+    "divergence": "info",
+    "mean_reversion": "info",
+}
+
+ALL_STYLES = (trend_pullback, breakout, htf_momentum, mean_reversion, liquidity_sweep, divergence, vwap_volume)
 
 
 def collect_votes(ctx: Context) -> list[Vote]:
@@ -195,5 +237,6 @@ def collect_votes(ctx: Context) -> list[Vote]:
     for fn in ALL_STYLES:
         v = fn(ctx)
         if v is not None and v.s > 0:
-            votes.append(v)
+            role = STYLE_ROLE.get(v.style, "info")
+            votes.append(replace(v, role=role, core=role == "anchor"))
     return votes

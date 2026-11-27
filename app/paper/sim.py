@@ -2,7 +2,7 @@
 
 Pure functions, no I/O. Rules (agreed for the paper account):
   * fill at the OPEN of the 15m bar after the signal bar (no look-ahead)
-  * risk % by score: >=85 -> 1.5%, >=75 -> 1%, else 0.5% of equity
+  * fixed risk per trade (1% of equity, RISK_PCT)
   * leverage is the lowest that fits the margin budget, capped at 20x and kept
     low enough that liquidation sits well beyond the stop
   * TP1 closes half and moves the stop to entry; TP2 closes the rest
@@ -23,12 +23,13 @@ FUNDING_HOURS = (0, 8, 16)
 HOUR_MS = 3_600_000
 
 
+RISK_PCT = float(__import__("os").environ.get("RISK_PCT", "1.0"))
+
+
 def risk_pct_for_score(score: float) -> float:
-    if score >= 85:
-        return 1.5
-    if score >= 75:
-        return 1.0
-    return 0.5
+    """Fixed risk per trade. The first backtest showed no edge for higher scores,
+    so score-based sizing (0.5/1/1.5%) was removed in v2.1."""
+    return RISK_PCT
 
 
 @dataclass

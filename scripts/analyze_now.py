@@ -61,7 +61,7 @@ async def main() -> None:
                       f"entry={lb.entry} stop={lb.stop} tp1={lb.tp1} tp2={lb.tp2}")
         if only:
             for v in d.votes:
-                print(f"   - {v.style} ({'core' if v.core else 'filter'}) {SIDE[v.side]} s={v.s} stop={v.stop}  {v.reason}")
+                print(f"   - {v.style} ({v.role}) {SIDE[v.side]} s={v.s} stop={v.stop}  {v.reason}")
     print("\nsummary:", dict(results))
     if lbank:
         await lbank.close()

@@ -20,14 +20,15 @@ def test_trade_in_r_resumes_after_tp1():
 
 
 SIG = {"id": 1, "symbol": "SOLUSDT", "side": -1, "score": 82.4, "entry": 142.35, "stop": 145.1, "tp1": 138.23, "tp2": 134.1,
-       "styles": [{"style": "trend_pullback", "core": True}, {"style": "vwap_volume", "core": False}], "notes": [],
+       "styles": [{"style": "trend_pullback", "role": "anchor"}, {"style": "vwap_volume", "role": "confirm"},
+                  {"style": "divergence", "role": "info"}], "notes": [],
        "lbank_entry": 142.45, "lbank_stop": 145.2, "lbank_tp1": 138.33, "lbank_tp2": 134.2}
 
 
 def test_new_signal_uses_lbank_levels_and_core_styles():
     text = M.new_signal(SIG, "https://signal.telec.shop")
     assert "فروش SOLUSDT" in text and "142.45" in text and "145.20" in text
-    assert "پولبک روندی" in text and "VWAP" not in text
+    assert "پولبک روندی" in text and "VWAP" in text and "واگرایی" not in text
     assert "ریسک پیشنهادی: 1.0٪" in text and "ال‌بانک" in text
 
 

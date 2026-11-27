@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 from app.paper.sim import risk_pct_for_score
 
 TEHRAN = timezone(timedelta(hours=3, minutes=30))
-STYLE_FA = {"trend_pullback": "پولبک روندی", "breakout": "شکست محدوده", "mean_reversion": "برگشت به میانگین",
+STYLE_FA = {"htf_momentum": "مومنتوم ۴ساعته", "trend_pullback": "پولبک روندی", "breakout": "شکست محدوده", "mean_reversion": "برگشت به میانگین",
             "liquidity_sweep": "شکار نقدینگی", "divergence": "واگرایی RSI", "vwap_volume": "VWAP و حجم"}
 FA_DIGITS = str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")
 
@@ -37,7 +37,7 @@ def new_signal(c: dict, site: str) -> str:
     entry, stop, tp1, tp2, venue = _levels(c)
     risk = abs(entry - stop)
     rr2 = abs(tp2 - entry) / risk if risk else 0
-    styles = "، ".join(STYLE_FA.get(s["style"], s["style"]) for s in c.get("styles", []) if s.get("core", True))
+    styles = "، ".join(STYLE_FA.get(s["style"], s["style"]) for s in c.get("styles", []) if s.get("role", "anchor") != "info")
     sym = html.escape(c["symbol"])
     lines = [
         f"{'🟢' if long else '🔴'} <b>{'خرید' if long else 'فروش'} {sym}</b>   امتیاز {round(c['score'])}",

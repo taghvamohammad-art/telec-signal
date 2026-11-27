@@ -70,6 +70,10 @@ def donchian_prev(df: pd.DataFrame, n: int = 20) -> pd.DataFrame:
     return pd.DataFrame({"dc_hi": df["high"].rolling(n).max().shift(1), "dc_lo": df["low"].rolling(n).min().shift(1)})
 
 
+def donchian55_prev(df: pd.DataFrame) -> pd.DataFrame:
+    return pd.DataFrame({"dc55_hi": df["high"].rolling(55).max().shift(1), "dc55_lo": df["low"].rolling(55).min().shift(1)})
+
+
 def rel_volume(vol: pd.Series, n: int = 20) -> pd.Series:
     """Current volume / average of the previous n bars."""
     return vol / vol.rolling(n).mean().shift(1)
@@ -123,7 +127,7 @@ def add_indicators(df: pd.DataFrame, pivot_k: int = 3) -> pd.DataFrame:
     out["rsi"] = rsi(c)
     out["atr"] = atr(out)
     out["atr_pct"] = out["atr"] / c * 100
-    out = out.join(adx(out)).join(bollinger(c)).join(macd(c)).join(donchian_prev(out))
+    out = out.join(adx(out)).join(bollinger(c)).join(macd(c)).join(donchian_prev(out)).join(donchian55_prev(out))
     out["rvol"] = rel_volume(out["volume"])
     out["vwap"] = vwap_daily(out)
     out = out.join(confirmed_pivots(out, pivot_k))

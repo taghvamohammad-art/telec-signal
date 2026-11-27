@@ -11,8 +11,8 @@ def T(side=1, entry=100.0, stop=96.0, tp1=106.0, tp2=112.0, qty=10.0, fee=0.0):
     return t
 
 
-def test_risk_pct_levels():
-    assert [risk_pct_for_score(s) for s in (90, 85, 80, 75, 72)] == [1.5, 1.5, 1.0, 1.0, 0.5]
+def test_risk_is_fixed_since_v21():
+    assert {risk_pct_for_score(s) for s in (90, 85, 80, 75, 72)} == {1.0}
 
 
 def test_sizing_risk_matches_target_and_leverage_is_safe():
@@ -27,7 +27,7 @@ def test_sizing_risk_matches_target_and_leverage_is_safe():
 
 def test_sizing_shrinks_when_margin_short():
     s = size_position(equity=1000, free_margin=50, slots_left=5, score=90, entry=100, stop=99.5, fee_rate=FEE)
-    assert s.note and s.margin <= 10 + 1e-9 and s.risk_amount < 15
+    assert s.note and s.margin <= 10 + 1e-9 and s.risk_amount < 10
 
 
 def test_sizing_rejects_bad_input():

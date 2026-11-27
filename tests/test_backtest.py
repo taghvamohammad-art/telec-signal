@@ -84,3 +84,42 @@ def test_breakdown_by_style():
     b = breakdown(res, lambda r: [s["style"] for s in r["styles"]])
     assert b["a"] == {"n": 2, "win_rate": 50.0, "avg_r": 0.5, "total_r": 1.0}
     assert b["b"]["n"] == 1
+
+
+def trending_frames(seed, days=200):
+    """15m candles with alternating trend legs; higher timeframes aggregated from them."""
+    rng = np.random.default_rng(seed)
+    n = days * 96
+    drift = np.repeat(rng.choice([-0.0012, -0.0006, 0.0, 0.0006, 0.0012], size=n // 960 + 1), 960)[:n]
+    close = 100 * np.exp(np.cumsum(drift / 4 + rng.normal(0, 0.003, n)))
+    vol = rng.lognormal(4, 0.6, n)
+    start = 1_760_000_000_000 - 1_760_000_000_000 % 86_400_000
+    m15 = frame(close, "15m", start=start, vol=vol, seed=seed)
+    out = {"15m": m15}
+    for tf in ("1h", "4h", "1d"):
+        k = tf_ms(tf) // M15
+        g = np.arange(n) // k
+        agg = m15.groupby(g).agg({"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"})
+        agg.index = start + agg.index.to_numpy() * tf_ms(tf)
+        out[tf] = agg
+    return out
+
+
+def test_fast_replay_identical():
+    """The speed-ups (cached regime/bias, skipping bars where no anchor can fire) change nothing."""
+    import app.analysis.scoring as sc
+    from app.backtest.replay import replay_symbol
+    old = sc.THRESHOLD
+    sc.THRESHOLD = 50.0  # a bit looser so synthetic data yields enough signals to compare
+    try:
+        raw, btc_raw = trending_frames(31), trending_frames(32)
+        prep = {tf: add_indicators(df) for tf, df in raw.items()}
+        bprep = {tf: add_indicators(df) for tf, df in btc_raw.items()}
+        end = int(raw["15m"].index[-1]) + M15
+        start = end - 90 * 86_400_000
+        slow, _ = replay_symbol("XUSDT", prep, bprep, None, start, end, fast=False)
+        fast, _ = replay_symbol("XUSDT", prep, bprep, None, start, end, fast=True)
+        assert slow == fast
+        assert len(slow) > 0
+    finally:
+        sc.THRESHOLD = old

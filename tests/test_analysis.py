@@ -107,27 +107,39 @@ def test_vwap_filter_is_not_core():
 
 
 # ---- scoring ----------------------------------------------------------
-def V(style, side, s, stop, core=True):
-    return Vote(style, side, s, stop, "", core)
+def V(style, side, s, stop, core=None):
+    from app.analysis.strategies import STYLE_ROLE
+    role = STYLE_ROLE.get(style, "anchor")
+    return Vote(style, side, s, stop, "", role == "anchor", role)
 
 
-def test_needs_two_strong_core_styles():
-    one = [V("breakout", 1, 0.9, 95), V("vwap_volume", 1, 0.9, None, core=False)]
-    c, why = build_candidate("X", one, 100, 3, 1.0)
-    assert c is None and why == "not_enough_confirmation"
+def test_anchor_needed_and_confirmation_counts():
+    alone = [V("breakout", 1, 0.9, 95)]
+    assert build_candidate("X", alone, 100, 3, 1.0) == (None, "not_enough_confirmation")
+    confirms_only = [V("liquidity_sweep", 1, 0.9, 95), V("vwap_volume", 1, 0.9, None)]
+    assert build_candidate("X", confirms_only, 100, 3, 1.0) == (None, "no_anchor")
+    with_confirm = [V("breakout", 1, 0.9, 95), V("vwap_volume", 1, 0.9, None)]
+    assert build_candidate("X", with_confirm, 100, 3, 1.0)[1] == "ok"
+
+
+def test_info_styles_are_ignored():
+    votes = [V("breakout", 1, 0.9, 97), V("divergence", 1, 0.9, 96), V("mean_reversion", -1, 0.95, 104)]
+    assert build_candidate("X", votes, 100, 3, 1.0) == (None, "not_enough_confirmation")
 
 
 def test_conflict_blocks_signal():
-    votes = [V("breakout", 1, 0.8, 95), V("trend_pullback", 1, 0.8, 96), V("divergence", -1, 0.7, 104)]
+    votes = [V("breakout", 1, 0.8, 95), V("trend_pullback", 1, 0.8, 96), V("htf_momentum", -1, 0.7, 104)]
     assert build_candidate("X", votes, 100, 3, 1.0) == (None, "conflict")
+    info_only_opposite = [V("breakout", 1, 0.8, 95), V("trend_pullback", 1, 0.8, 96), V("divergence", -1, 0.9, 104)]
+    assert build_candidate("X", info_only_opposite, 100, 3, 1.0)[1] == "ok"
 
 
 def test_valid_candidate_levels_in_r():
     votes = [V("breakout", 1, 0.8, 97), V("liquidity_sweep", 1, 0.9, 96), V("vwap_volume", 1, 0.7, None, core=False)]
     c, why = build_candidate("X", votes, 100, 3, 1.0)
     assert why == "ok" and c.score >= THRESHOLD
-    assert c.stop == 96 and c.risk == 4  # stop from the strongest style
-    assert c.tp1 == pytest.approx(106) and c.tp2 == pytest.approx(112)
+    assert c.stop == 97 and c.risk == 3  # stop from the anchor style, not the confirmation
+    assert c.tp1 == pytest.approx(104.5) and c.tp2 == pytest.approx(109)
 
 
 def test_tight_stop_widened_and_far_stop_rejected():
@@ -178,9 +190,33 @@ def test_analyze_insufficient_data():
     assert diag.result == "insufficient_data"
 
 
+def test_range_regime_gives_no_trade():
+    from app.analysis.analyzer import evaluate
+    flat = add_indicators(frame(100 + np.sin(np.arange(400) / 7) * 0.3, tf="1h"))
+    prep = {"15m": flat, "1h": flat, "4h": flat, "1d": flat}
+    _, d = evaluate("XUSDT", prep, (None, None), regime=Regime.RANGE, bias=0)
+    assert d.result == "range"
+
+
+def test_htf_momentum_fires_once_on_4h_close():
+    from app.analysis.strategies import htf_momentum
+    n = 120
+    base = list(100 + np.sin(np.arange(n - 1) / 5))
+    h4 = add_indicators(frame(base + [104.0], tf="4h", spread=0.001))  # last 4h bar breaks the 55-bar high
+    d1 = add_indicators(frame(np.linspace(80, 104, 80), tf="1d", start=int(h4.index[0])))
+    h1 = add_indicators(frame(base + [104.0], tf="1h", start=int(h4.index[0])))
+    close_4h = int(h4.index[-1]) + tf_ms("4h")
+    m15 = add_indicators(frame([100.0] * 50 + [104.0], tf="15m", start=close_4h - 51 * M15))
+    ctx = Context("XUSDT", m15, h1, h4, d1, Regime.TREND_UP, 1)
+    v = htf_momentum(ctx)
+    assert v is not None and v.side == 1 and v.stop < 104
+    m15_later = add_indicators(frame([100.0] * 51 + [104.0], tf="15m", start=close_4h - 51 * M15))
+    assert htf_momentum(Context("XUSDT", m15_later, h1, h4, d1, Regime.TREND_UP, 1)) is None
+
+
 def test_stop_taken_from_valid_style_when_strongest_is_stale():
-    votes = [V("breakout", 1, 0.95, 101.0), V("liquidity_sweep", 1, 0.8, 97.0)]  # breakout stop already above entry
+    votes = [V("breakout", 1, 0.95, 101.0), V("trend_pullback", 1, 0.8, 97.0)]  # breakout stop already above entry
     c, why = build_candidate("X", votes, 100, 3, 1.0)
     assert why == "ok" and c.stop == 97.0
-    stale = [V("breakout", 1, 0.95, 101.0), V("liquidity_sweep", 1, 0.8, 100.5)]
+    stale = [V("breakout", 1, 0.95, 101.0), V("trend_pullback", 1, 0.8, 100.5)]
     assert build_candidate("X", stale, 100, 3, 1.0) == (None, "stop_wrong_side")

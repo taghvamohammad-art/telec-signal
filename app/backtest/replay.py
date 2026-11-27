@@ -14,8 +14,8 @@ from dataclasses import asdict
 import numpy as np
 import pandas as pd
 
-from app.analysis.analyzer import MIN_BARS, evaluate
-from app.analysis.regime import classify
+from app.analysis.analyzer import MIN_BARS, NO_TRADE_REGIMES, evaluate
+from app.analysis.regime import Regime, classify, htf_bias
 from app.core.timeframes import tf_ms
 
 TFS = ("15m", "1h", "4h", "1d")
@@ -66,8 +66,14 @@ def replay_symbol(
     start_ms: int,
     end_ms: int,
     weights: dict[str, float] | None = None,
+    fast: bool = True,
 ) -> tuple[list[dict], dict]:
-    """Returns (candidates, counters). Candidate dicts mirror signal_candidates rows."""
+    """Returns (candidates, counters). Candidate dicts mirror signal_candidates rows.
+
+    fast=True caches the 1h regime / 4h bias (they only change when those bars
+    close) and skips bars where no anchor style can fire. Identical results are
+    checked by tests/test_backtest.py::test_fast_replay_identical.
+    """
     me = Cutter(prep)
     btc = me if symbol == "BTCUSDT" else (Cutter(btc_prep) if btc_prep else None)
     step = tf_ms("15m")
@@ -75,6 +81,8 @@ def replay_symbol(
     out: list[dict] = []
     counters: dict[str, int] = {}
     last_signal = -10**18
+    reg_cache: dict[int, Regime] = {}
+    bias_cache: dict[int, int] = {}
     for o in opens:
         now = int(o) + step
         if now < start_ms or now > end_ms:
@@ -83,7 +91,22 @@ def replay_symbol(
         if cut is None:
             counters["insufficient_data"] = counters.get("insufficient_data", 0) + 1
             continue
-        cand, diag = evaluate(symbol, cut, lambda n=now: btc_ctx_at(btc, n), funding_at(funding, now), weights)
+        regime = bias = None
+        if fast:
+            n1, n4 = len(cut["1h"]), len(cut["4h"])
+            regime = reg_cache.get(n1) or reg_cache.setdefault(n1, classify(cut["1h"]))
+            bias = bias_cache[n4] if n4 in bias_cache else bias_cache.setdefault(n4, htf_bias(cut["4h"]))
+            if regime in NO_TRADE_REGIMES:
+                counters[regime.value] = counters.get(regime.value, 0) + 1
+                continue
+            trend = regime in (Regime.TREND_UP, Regime.TREND_DOWN)
+            rvol = cut["1h"]["rvol"].iat[-1]
+            h4_close = int(cut["4h"].index[-1]) + tf_ms("4h") == now
+            if not trend and not (rvol >= 1.5) and not h4_close:  # no anchor style can fire
+                counters["no_anchor"] = counters.get("no_anchor", 0) + 1
+                continue
+        cand, diag = evaluate(symbol, cut, lambda n=now: btc_ctx_at(btc, n), funding_at(funding, now), weights,
+                              regime=regime, bias=bias)
         key = diag.result if not diag.result.startswith("score_") else "below_threshold"
         counters[key] = counters.get(key, 0) + 1
         if cand is None or now - last_signal < COOLDOWN_MS:

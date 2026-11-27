@@ -12,6 +12,7 @@ import logging
 import os
 import time
 from collections import Counter
+from datetime import datetime, timezone
 from concurrent.futures import ProcessPoolExecutor
 
 import pandas as pd
@@ -63,7 +64,7 @@ async def load_funding(store: Store, binance: BinanceFutures, symbol: str, start
     return pd.Series([r["rate"] for r in rows], index=[int(r["ts"].timestamp() * 1000) for r in rows], dtype=float)
 
 
-def summarize(results: list[dict], split_ms: int) -> dict:
+def summarize(results: list[dict], split_ms: int, unseen_before_ms: int | None = None) -> dict:
     closed = [r for r in results if r.get("status") == "closed"]
 
     def block(rs):
@@ -79,7 +80,10 @@ def summarize(results: list[dict], split_ms: int) -> dict:
         "all": block(closed),
         "in_sample": block([r for r in closed if r["bar_time"] < split_ms]),
         "out_of_sample": block([r for r in closed if r["bar_time"] >= split_ms]),
-        "by_style": breakdown(results, lambda r: [s["style"] for s in r["styles"] if s.get("core", True)]),
+        # period that was NOT looked at when the v2.1 rules were chosen
+        "unseen": block([r for r in closed if unseen_before_ms and r["bar_time"] < unseen_before_ms]),
+        "unseen_before": unseen_before_ms,
+        "by_style": breakdown(results, lambda r: [s["style"] for s in r["styles"] if s.get("role", "anchor") != "info"]),
         "by_side": breakdown(results, lambda r: ["long" if r["side"] > 0 else "short"]),
         "by_regime": breakdown(results, "regime_1h"),
         "by_score": breakdown(results, score_bucket),
@@ -94,6 +98,8 @@ async def main() -> None:
     ap.add_argument("--fee", type=float, default=0.0006)
     ap.add_argument("--workers", type=int, default=max(1, (os.cpu_count() or 2)))
     ap.add_argument("--split", type=float, default=0.6, help="share of the period used as in-sample")
+    ap.add_argument("--seen-until", default="2026-07-30",
+                    help="v2.1 rules were chosen from data after this date; earlier signals are reported as 'unseen'")
     ap.add_argument("symbols", nargs="*")
     a = ap.parse_args()
     cfg = load_settings()
@@ -139,7 +145,7 @@ async def main() -> None:
         summary = {
             "version": VERSION, "threshold": THRESHOLD, "period": {"start": start, "end": end, "split": split_ms},
             "symbols": len(jobs), "signals": len(all_cands), "decisions": dict(counters),
-            "signal_r": summarize(results, split_ms), "portfolio": {"stats": port["stats"], "final_equity": port["final_equity"],
+            "signal_r": summarize(results, split_ms, int(datetime.strptime(a.seen_until, "%Y-%m-%d").replace(tzinfo=timezone.utc).timestamp() * 1000)), "portfolio": {"stats": port["stats"], "final_equity": port["final_equity"],
                                                                     "capital": a.capital},
             "seconds": round(time.time() - t0),
             "caveats": ["universe = today's analysis set (coins that left the top list are missing)",
@@ -160,7 +166,7 @@ async def main() -> None:
 def print_report(s: dict, run_id: int) -> None:
     sr, p = s["signal_r"], s["portfolio"]
     print(f"\n=== backtest #{run_id}  ({s['symbols']} symbols, {s['signals']} signals, {s['seconds']}s) ===")
-    for name in ("all", "in_sample", "out_of_sample"):
+    for name in ("all", "in_sample", "out_of_sample", "unseen"):
         b = sr[name]
         print(f"{name:<14} n={b.get('n', 0):<4} win={b.get('win_rate')}%  avgR={b.get('avg_r')}  totalR={b.get('total_r')}  PF={b.get('profit_factor')}")
     print(f"portfolio: {p['capital']} -> {p['final_equity']}  {p['stats']}")

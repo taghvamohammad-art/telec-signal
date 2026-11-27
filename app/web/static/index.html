@@ -19,6 +19,8 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h4"/></svg>ترید مجازی</button>
     <button role="tab" data-view="backtest" aria-selected="false">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 7v5l3 2"/><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3L4 9.4"/><path d="M4 5v4.4h4.4"/></svg>بک‌تست</button>
+    <button role="tab" data-view="ops" aria-selected="false" class="hidden" id="ops-tab">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3M12 15h5"/></svg>سرور</button>
   </nav>
   <div class="who"><span id="who"></span>
     <button class="btn quiet" id="tg-open" aria-haspopup="dialog">
@@ -158,7 +160,43 @@
       <p class="muted small" id="b-caveats"></p>
     </div>
   </section>
+  <!-- server operations (admin) -->
+  <section class="view" id="view-ops" hidden>
+    <div class="view-head">
+      <div><h1>عملیات سرور</h1><p>به‌جای SSH، کارهای از پیش تعریف‌شده را از اینجا اجرا کنید. هیچ دستور دلخواهی اجرا نمی‌شود و هر اجرا با نام کاربر و IP ثبت می‌شود.</p></div>
+    </div>
+    <div id="ops-down" class="empty hidden"><b>سرویس عملیات روی سرور نصب نیست یا اجرا نمی‌شود.</b>یک بار با SSH نصبش کنید (دستورش در گفتگو آمده است).</div>
+    <div class="ops">
+      <div class="ops-kinds" id="ops-kinds"></div>
+      <form class="ops-form" id="ops-form" hidden>
+        <h2 id="ops-f-title"></h2>
+        <p class="muted" id="ops-f-help"></p>
+        <div class="ops-fields" id="ops-fields"></div>
+        <p class="form-error" id="ops-err" role="alert"></p>
+        <div class="dlg-actions"><button class="btn" type="submit" id="ops-run">اجرا</button></div>
+      </form>
+    </div>
+    <h3 class="section-title">اجراهای اخیر</h3>
+    <div class="ops-jobs">
+      <ul class="ops-list" id="ops-list"></ul>
+      <div class="ops-console">
+        <div class="ops-console-head"><b id="ops-c-title">یک اجرا را انتخاب کنید</b>
+          <span class="ops-status" id="ops-c-status"></span>
+          <button class="btn quiet hidden" type="button" id="ops-cancel">لغو</button></div>
+        <pre class="num console" id="ops-out" dir="ltr" tabindex="0" aria-live="off"></pre>
+      </div>
+    </div>
+  </section>
 </main>
+<dialog id="ops-confirm" aria-labelledby="ops-confirm-title">
+  <form class="dlg" id="ops-confirm-form">
+    <h2 id="ops-confirm-title">تأیید رمز</h2>
+    <p class="muted">برای امنیت، اجرای عملیات سرور به تأیید دوبارهٔ رمز نیاز دارد. این تأیید ۱۵ دقیقه اعتبار دارد.</p>
+    <input class="field" name="password" type="password" autocomplete="current-password" required aria-label="رمز عبور">
+    <p class="form-error" id="ops-confirm-err" role="alert"></p>
+    <div class="dlg-actions"><button class="btn quiet" type="button" id="ops-confirm-cancel">انصراف</button><button class="btn" type="submit">تأیید</button></div>
+  </form>
+</dialog>
 <dialog id="cx-dialog" aria-labelledby="cx-title">
   <div class="dlg">
     <h2 id="cx-title">ارزهای دلخواه</h2>

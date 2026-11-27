@@ -1,0 +1,21 @@
+[Unit]
+Description=telec-signal server operations runner (jobs queued from the admin panel)
+After=network-online.target postgresql.service
+Wants=network-online.target
+Requires=postgresql.service
+
+[Service]
+Type=simple
+# root is needed for git pull, systemctl and journalctl; analysis jobs drop to the telec user.
+# Only whitelisted job kinds from app/ops/jobs.py can run; the web never sends commands.
+User=root
+WorkingDirectory=__APP_DIR__
+EnvironmentFile=__APP_DIR__/.env
+ExecStart=__APP_DIR__/.venv/bin/python -m app.ops.runner
+Restart=always
+RestartSec=10
+TimeoutStopSec=30
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

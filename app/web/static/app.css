@@ -234,3 +234,36 @@ dialog::backdrop { background: rgba(10, 12, 24, .65); }
 .glossary dd b { color: var(--text); }
 th[title] { cursor: help; text-decoration: underline dotted rgba(145,151,174,.6); text-underline-offset: 4px; }
 @media (max-width: 720px) { .glossary dl { grid-template-columns: 1fr; gap: 2px; } .glossary dd { margin-bottom: 8px; } }
+
+/* server operations */
+.ops { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+.ops-kinds { display: grid; gap: 16px; }
+.ops-group h3 { margin: 0 0 8px; font-size: 14px; color: var(--muted); font-weight: 500; }
+.ops-group div { display: flex; flex-wrap: wrap; gap: 8px; }
+.ops-kind { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-s); padding: 8px 14px; cursor: pointer; text-align: start; }
+.ops-kind[aria-pressed="true"] { border-color: var(--saffron); background: var(--surface-2); }
+.ops-kind.danger::after { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--short); margin-inline-start: 8px; vertical-align: middle; }
+.ops-form { background: var(--surface); border-radius: var(--radius-m); padding: 18px 20px; display: grid; gap: 12px; }
+.ops-form h2 { margin: 0; font-size: 18px; }
+.ops-form p { margin: 0; }
+.ops-fields { display: grid; gap: 10px; }
+.ops-fields label { display: grid; gap: 4px; font-size: 14px; color: var(--muted); }
+.ops-jobs { display: grid; grid-template-columns: minmax(220px, 300px) minmax(0, 1fr); gap: 14px; align-items: start; }
+.ops-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-height: 560px; overflow-y: auto; }
+.ops-list button { width: 100%; display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; text-align: start; background: var(--surface);
+  border: 1px solid transparent; border-radius: var(--radius-s); padding: 8px 12px; cursor: pointer; }
+.ops-list button[aria-current="true"] { border-color: var(--saffron); }
+.ops-list small { color: var(--muted); grid-column: 1 / -1; font-size: 12px; }
+.ops-status { font-size: 12px; padding: 1px 8px; border-radius: 999px; background: var(--line); white-space: nowrap; }
+.ops-status.running, .ops-status.queued { background: rgba(233, 180, 76, .18); color: var(--saffron); }
+.ops-status.done { background: rgba(59, 191, 154, .16); color: var(--long); }
+.ops-status.failed, .ops-status.cancelled { background: rgba(239, 107, 107, .16); color: var(--short); }
+.ops-console { background: var(--surface); border-radius: var(--radius-m); padding: 12px; min-width: 0; }
+.ops-console-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ops-console-head b { flex: 1; }
+.console { height: 480px; overflow: auto; white-space: pre-wrap; word-break: break-word; font: 12.5px/1.55 ui-monospace, "Cascadia Mono", Consolas, monospace; }
+@media (max-width: 860px) {
+  .ops, .ops-jobs { grid-template-columns: 1fr; }
+  .ops-list { max-height: 220px; }
+  .console { height: 360px; }
+}

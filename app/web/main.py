@@ -14,6 +14,7 @@ from starlette.responses import FileResponse, JSONResponse, RedirectResponse, Re
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
+from app.ops.jobs import KINDS, InvalidParams, describe
 from app.web.auth import new_token, verify_password
 
 log = logging.getLogger("telec.web")
@@ -226,6 +227,133 @@ async def api_custom_remove(request: Request) -> Response:
     return JSONResponse({"ok": True})
 
 
+# ---- server operations (admin + recent password check) ----------------------
+MAX_PENDING_JOBS = 3
+
+
+async def api_ops_kinds(request: Request) -> Response:
+    user = await _admin(request)
+    if user is None:
+        return JSONResponse({"error": "فقط مدیر"}, status_code=403)
+    alive = await request.app.state.repo.ops_runner_alive()
+    return JSONResponse({"kinds": describe(), "elevated": bool(user.get("elevated")), "runner_alive": alive})
+
+
+async def api_ops_confirm(request: Request) -> Response:
+    user = await _admin(request)
+    if user is None:
+        return JSONResponse({"error": "فقط مدیر"}, status_code=403)
+    ip = _client_ip(request)
+    if _too_many(ip):
+        return JSONResponse({"error": "تعداد تلاش زیاد است؛ ۵ دقیقه بعد دوباره امتحان کنید"}, status_code=429)
+    try:
+        password = str((await request.json())["password"])
+    except Exception:
+        return JSONResponse({"error": "رمز را وارد کنید"}, status_code=400)
+    stored = await request.app.state.repo.password_hash(user["id"])
+    if not stored or not verify_password(password, stored):
+        _failed[ip].append(time.time())
+        log.warning("ops confirm failed for %s from %s", user["username"], ip)
+        return JSONResponse({"error": "رمز اشتباه است"}, status_code=400)  # not 401: that would log the user out
+    await request.app.state.repo.elevate(request.cookies.get(COOKIE))
+    return JSONResponse({"ok": True})
+
+
+async def api_ops_jobs(request: Request) -> Response:
+    if await _admin(request) is None:
+        return JSONResponse({"error": "فقط مدیر"}, status_code=403)
+    return JSONResponse(await request.app.state.repo.ops_jobs())
+
+
+async def api_ops_job(request: Request) -> Response:
+    if await _admin(request) is None:
+        return JSONResponse({"error": "فقط مدیر"}, status_code=403)
+    job = await request.app.state.repo.ops_job(int(request.path_params["job_id"]))
+    return JSONResponse(job) if job else JSONResponse({"error": "not found"}, status_code=404)
+
+
+async def api_ops_create(request: Request) -> Response:
+    user = await _admin(request)
+    if user is None:
+        return JSONResponse({"error": "فقط مدیر"}, status_code=403)
+    if not user.get("elevated"):
+        return JSONResponse({"error": "برای اجرای عملیات، رمز خود را دوباره وارد کنید.", "need_confirm": True}, status_code=403)
+    try:
+        body = await request.json()
+        kind = KINDS[str(body["kind"])]
+        params = kind.clean(body.get("params") or {})
+    except KeyError:
+        return JSONResponse({"error": "عملیات ناشناخته"}, status_code=400)
+    except InvalidParams as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    except Exception:
+        return JSONResponse({"error": "درخواست نامعتبر"}, status_code=400)
+    ip = _client_ip(request)
+    job_id = await request.app.state.repo.ops_create(kind.key, params, user["id"], ip, MAX_PENDING_JOBS)
+    if job_id is None:
+        return JSONResponse({"error": f"حداکثر {MAX_PENDING_JOBS} عملیات در صف؛ صبر کنید تا یکی تمام شود."}, status_code=409)
+    log.warning("ops job %s %s %s queued by %s from %s", job_id, kind.key, params, user["username"], ip)
+    return JSONResponse({"id": job_id})
+
+
+async def api_ops_cancel(request: Request) -> Response:
+    user = await _admin(request)
+    if user is None:
+        return JSONResponse({"error": "فقط مدیر"}, status_code=403)
+    if not user.get("elevated"):
+        return JSONResponse({"error": "برای لغو، رمز خود را دوباره وارد کنید.", "need_confirm": True}, status_code=403)
+    ok = await request.app.state.repo.ops_cancel(int(request.path_params["job_id"]))
+    return JSONResponse({"ok": ok})
+
+
+# ---- hardening ---------------------------------------------------------------
+CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
+       "font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; "
+       "object-src 'none'")
+SECURITY_HEADERS = {
+    "Content-Security-Policy": CSP,
+    "X-Frame-Options": "DENY",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "same-origin",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=()",
+    "Cross-Origin-Opener-Policy": "same-origin",
+    "Strict-Transport-Security": "max-age=31536000",
+}
+UNSAFE = {"POST", "PUT", "PATCH", "DELETE"}
+
+
+class Hardening:
+    """Security headers on every response; changing requests must come from this site (CSRF)."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        headers = {k.decode().lower(): v.decode("latin-1") for k, v in scope.get("headers", [])}
+        if scope["method"] in UNSAFE and scope["path"].startswith("/api/"):
+            host = headers.get("host", "")
+            origin = headers.get("origin") or ""
+            referer = headers.get("referer") or ""
+            src = origin or referer
+            ok = bool(src) and src.split("://", 1)[-1].split("/", 1)[0] == host
+            if not ok or headers.get("content-type", "").split(";")[0].strip() != "application/json":
+                resp = JSONResponse({"error": "درخواست از مبدأ نامعتبر رد شد"}, status_code=403)
+                return await resp(scope, receive, send)
+
+        async def send_with_headers(message):
+            if message["type"] == "http.response.start":
+                hs = list(message.get("headers", []))
+                hs += [(k.lower().encode(), v.encode()) for k, v in SECURITY_HEADERS.items()]
+                if scope["path"].startswith("/api/"):
+                    hs.append((b"cache-control", b"no-store"))
+                message["headers"] = hs
+            await send(message)
+
+        return await self.app(scope, receive, send_with_headers)
+
+
 def create_app(repo_factory=None) -> Starlette:
     @contextlib.asynccontextmanager
     async def lifespan(app: Starlette):
@@ -264,9 +392,17 @@ def create_app(repo_factory=None) -> Starlette:
         Route("/api/telegram/link", api_telegram_link, methods=["POST"]),
         Route("/api/telegram/unlink", api_telegram_unlink, methods=["POST"]),
         Route("/api/backtests/{run_id:int}", api_backtest),
+        Route("/api/ops/kinds", api_ops_kinds),
+        Route("/api/ops/confirm", api_ops_confirm, methods=["POST"]),
+        Route("/api/ops/jobs", api_ops_jobs),
+        Route("/api/ops/jobs", api_ops_create, methods=["POST"]),
+        Route("/api/ops/jobs/{job_id:int}", api_ops_job),
+        Route("/api/ops/jobs/{job_id:int}/cancel", api_ops_cancel, methods=["POST"]),
         Mount("/static", StaticFiles(directory=STATIC), name="static"),
     ]
-    return Starlette(routes=routes, lifespan=lifespan)
+    from starlette.middleware import Middleware
+
+    return Starlette(routes=routes, lifespan=lifespan, middleware=[Middleware(Hardening)])
 
 
 app = create_app()

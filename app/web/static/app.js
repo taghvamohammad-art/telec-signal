@@ -18,8 +18,9 @@ async function api(path, opts = {}) {
   const r = await fetch(path, { credentials: 'same-origin', ...opts,
     headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) } });
   if (r.status === 401) { location.href = '/login'; throw new Error('unauthorized'); }
-  const data = await r.json();
-  if (!r.ok) throw new Error(data.error || 'خطا');
+  let data;
+  try { data = await r.json(); } catch { throw new Error(`سرور پاسخ نداد (${r.status})`); }
+  if (!r.ok) { const e = new Error(data.error || 'خطا'); e.data = data; e.status = r.status; throw e; }
   return data;
 }
 
@@ -387,6 +388,144 @@ async function openTelegram() {
   };
 }
 
+
+// ---- server operations (admin) --------------------------------------------
+const OPS_STATUS = { queued: 'در صف', running: 'در حال اجرا', done: 'تمام شد', failed: 'خطا', cancelled: 'لغو شد' };
+const ops = { kinds: [], kind: null, job: null, timer: null };
+const kindLabel = (k) => (ops.kinds.find((x) => x.key === k) || {}).label || k;
+
+async function loadOps() {
+  try {
+    const r = await api('/api/ops/kinds');
+    ops.kinds = r.kinds;
+    $('#ops-down').classList.toggle('hidden', r.runner_alive);
+  } catch (e) { $('#ops-down').classList.remove('hidden'); throw e; }
+  const groups = {};
+  ops.kinds.forEach((k) => { (groups[k.group] = groups[k.group] || []).push(k); });
+  $('#ops-kinds').innerHTML = Object.entries(groups).map(([g, ks]) => `<section class="ops-group"><h3>${esc(g)}</h3><div>${
+    ks.map((k) => `<button type="button" class="ops-kind${k.dangerous ? ' danger' : ''}" data-kind="${esc(k.key)}" aria-pressed="${ops.kind === k.key}"
+      ${k.dangerous ? 'title="سرویس‌ها را جابه‌جا یا ری‌استارت می‌کند"' : ''}>${esc(k.label)}</button>`).join('')}</div></section>`).join('');
+  await loadJobs();
+}
+
+function opsField(p) {
+  const id = `ops-p-${p.name}`;
+  let input;
+  if (p.kind === 'choice') {
+    input = `<select class="field" id="${id}" name="${esc(p.name)}">${p.choices.map(([v, l]) =>
+      `<option value="${esc(v)}"${v === p.default ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
+  } else if (p.kind === 'int') {
+    input = `<input class="field num" id="${id}" name="${esc(p.name)}" type="number" inputmode="numeric" min="${p.lo}" max="${p.hi}" value="${p.default ?? ''}" required>`;
+  } else if (p.kind === 'date') {
+    input = `<input class="field num" id="${id}" name="${esc(p.name)}" type="date" ${p.optional ? '' : 'required'}>`;
+  } else {
+    input = `<input class="field num" id="${id}" name="${esc(p.name)}" dir="ltr" autocomplete="off" placeholder="BTCUSDT ETHUSDT">`;
+  }
+  const hint = p.kind === 'int' ? `<span class="small">از ${p.lo} تا ${p.hi}</span>` : '';
+  return `<label for="${id}">${esc(p.label)}${input}${hint}</label>`;
+}
+
+function selectKind(key) {
+  ops.kind = key;
+  const k = ops.kinds.find((x) => x.key === key);
+  document.querySelectorAll('.ops-kind').forEach((b) => b.setAttribute('aria-pressed', b.dataset.kind === key));
+  $('#ops-form').hidden = false;
+  $('#ops-f-title').textContent = k.label;
+  $('#ops-f-help').textContent = k.help;
+  $('#ops-fields').innerHTML = k.params.map(opsField).join('');
+  $('#ops-err').textContent = '';
+}
+
+function confirmPassword() {
+  const dlg = $('#ops-confirm'), form = $('#ops-confirm-form'), err = $('#ops-confirm-err');
+  form.reset(); err.textContent = '';
+  return new Promise((resolve) => {
+    const done = (v) => { form.onsubmit = null; $('#ops-confirm-cancel').onclick = null; dlg.close(); resolve(v); };
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      try { await api('/api/ops/confirm', { method: 'POST', body: JSON.stringify({ password: form.password.value }) }); done(true); }
+      catch (x) { err.textContent = x.message; }
+    };
+    $('#ops-confirm-cancel').onclick = () => done(false);
+    dlg.showModal();
+  });
+}
+
+async function opsPost(path, body) {
+  try { return await api(path, { method: 'POST', body: JSON.stringify(body) }); }
+  catch (e) {
+    if (e.data && e.data.need_confirm && await confirmPassword()) return api(path, { method: 'POST', body: JSON.stringify(body) });
+    throw e;
+  }
+}
+
+async function runKind(e) {
+  e.preventDefault();
+  const k = ops.kinds.find((x) => x.key === ops.kind); if (!k) return;
+  const params = {};
+  k.params.forEach((p) => {
+    const v = e.target.elements[p.name].value.trim();
+    if (v === '') return;
+    params[p.name] = p.kind === 'int' ? Number(v) : p.kind === 'symbols' ? v.toUpperCase().split(/[\s,]+/).filter(Boolean) : v;
+  });
+  if (k.dangerous && !confirm(`«${k.label}» سرویس‌ها را ری‌استارت می‌کند و سایت چند ثانیه قطع می‌شود. ادامه می‌دهید؟`)) return;
+  $('#ops-err').textContent = '';
+  $('#ops-run').disabled = true;
+  try {
+    const r = await opsPost('/api/ops/jobs', { kind: k.key, params });
+    await loadJobs();
+    selectJob(r.id);
+  } catch (x) { $('#ops-err').textContent = x.message; }
+  finally { $('#ops-run').disabled = false; }
+}
+
+async function loadJobs() {
+  const jobs = await api('/api/ops/jobs');
+  $('#ops-list').innerHTML = jobs.length ? jobs.map((j) => `<li><button type="button" data-job="${j.id}" aria-current="${ops.job === j.id}">
+      <span>#${j.id} · ${esc(kindLabel(j.kind))}</span><span class="ops-status ${esc(j.status)}">${OPS_STATUS[j.status] || esc(j.status)}</span>
+      <small>${when(j.created_at)} · ${esc(j.requested_by || '—')}${Object.keys(j.params || {}).length ? ' · ' + esc(Object.entries(j.params).filter(([, v]) => v != null).map(([k, v]) => `${k}=${Array.isArray(v) ? v.join(' ') : v}`).join(' ')) : ''}</small>
+    </button></li>`).join('') : '<li class="muted small">هنوز اجرایی نبوده است.</li>';
+  if (!ops.job && jobs.length) selectJob(jobs[0].id);
+}
+
+async function selectJob(id) {
+  ops.job = id;
+  clearTimeout(ops.timer);
+  document.querySelectorAll('#ops-list button').forEach((b) => b.setAttribute('aria-current', Number(b.dataset.job) === id));
+  await pollJob();
+}
+
+async function pollJob() {
+  const id = ops.job; if (!id) return;
+  let j;
+  try { j = await api(`/api/ops/jobs/${id}`); }
+  catch (e) {  // the web service restarts during updates: keep trying
+    $('#ops-c-status').textContent = 'در انتظار سرور…';
+    ops.timer = setTimeout(pollJob, 3000); return;
+  }
+  if (ops.job !== id) return;
+  const out = $('#ops-out');
+  const atBottom = out.scrollHeight - out.scrollTop - out.clientHeight < 40;
+  $('#ops-c-title').textContent = `#${j.id} · ${kindLabel(j.kind)}`;
+  const st = $('#ops-c-status'); st.className = `ops-status ${j.status}`; st.textContent = OPS_STATUS[j.status] || j.status;
+  out.textContent = j.output || (j.status === 'queued' ? 'در صف اجرا…' : '');
+  if (atBottom) out.scrollTop = out.scrollHeight;
+  const live = j.status === 'queued' || j.status === 'running';
+  $('#ops-cancel').classList.toggle('hidden', !live || j.cancel_requested);
+  if (live) ops.timer = setTimeout(pollJob, 2000);
+  else if (document.querySelector(`#ops-list button[data-job="${id}"] .ops-status.running, #ops-list button[data-job="${id}"] .ops-status.queued`)) loadJobs().catch(showError);
+}
+
+function bindOps() {
+  $('#ops-kinds').addEventListener('click', (e) => { const b = e.target.closest('.ops-kind'); if (b) selectKind(b.dataset.kind); });
+  $('#ops-form').addEventListener('submit', runKind);
+  $('#ops-list').addEventListener('click', (e) => { const b = e.target.closest('[data-job]'); if (b) selectJob(Number(b.dataset.job)); });
+  $('#ops-cancel').addEventListener('click', async () => {
+    if (!ops.job || !confirm('این اجرا متوقف شود؟')) return;
+    try { await opsPost(`/api/ops/jobs/${ops.job}/cancel`, {}); pollJob(); } catch (x) { alert(x.message); }
+  });
+}
+
 // ---- shell ---------------------------------------------------------------
 function showError(e) { if (e.message !== 'unauthorized') console.error(e); }
 
@@ -398,6 +537,8 @@ function showView(name) {
   if (name === 'signals') loadSignals().catch(showError);
   if (name === 'paper') loadPaper().catch(showError);
   if (name === 'backtest') loadBacktests().catch(showError);
+  if (name === 'ops') loadOps().catch(showError);
+  if (name !== 'ops') clearTimeout(ops.timer);
 }
 
 function bind() {
@@ -432,9 +573,10 @@ function bind() {
   });
   window.addEventListener('hashchange', () => {
     const v = location.hash.slice(1);
-    if (['chart', 'signals', 'paper', 'backtest'].includes(v)) showView(v);
+    if (['chart', 'signals', 'paper', 'backtest', 'ops'].includes(v)) showView(v);
   });
   bindCustom();
+  bindOps();
   rememberGlossary();
   $('#tg-open').addEventListener('click', () => openTelegram().catch(showError));
   $('#logout').addEventListener('click', async () => { await api('/api/logout', { method: 'POST' }); location.href = '/login'; });
@@ -448,11 +590,12 @@ async function main() {
   const me = await api('/api/me');
   $('#who').textContent = me.username;
   $('#cx-open').classList.toggle('hidden', !me.is_admin);
+  $('#ops-tab').classList.toggle('hidden', !me.is_admin);
   state.symbols = await api('/api/symbols');
   state.symbol = state.symbols.length ? state.symbols[0].symbol : null;
   renderChips();
   const start = (location.hash || '#chart').slice(1);
-  showView(['chart', 'signals', 'paper', 'backtest'].includes(start) ? start : 'chart');
+  showView(['chart', 'signals', 'paper', 'backtest', ...(me.is_admin ? ['ops'] : [])].includes(start) ? start : 'chart');
   if (start !== 'chart') loadChart().catch(showError);
   // refresh the visible view every minute (candles close every 15 minutes, marks every 5)
   setInterval(() => {

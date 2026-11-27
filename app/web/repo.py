@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import datetime, timedelta, timezone
 
@@ -9,6 +10,12 @@ from app.data.store import Store, dt_to_ms, ms_to_dt
 from app.paper.sim import stats
 
 SESSION_DAYS = 14
+ELEVATE_MIN = 15
+
+
+def token_key(token: str) -> str:
+    """Sessions are stored as a hash, so a database leak does not hand out logins."""
+    return hashlib.sha256(token.encode()).hexdigest()
 
 
 def _ms(v):
@@ -40,18 +47,79 @@ class WebRepo:
         async with self.s.pool.acquire() as con:
             await con.execute("DELETE FROM sessions WHERE expires_at < now()")
             await con.execute("INSERT INTO sessions (token, user_id, expires_at) VALUES ($1,$2,$3)",
-                              token, user_id, datetime.now(timezone.utc) + timedelta(days=SESSION_DAYS))
+                              token_key(token), user_id, datetime.now(timezone.utc) + timedelta(days=SESSION_DAYS))
 
     async def user_by_session(self, token: str):
         async with self.s.pool.acquire() as con:
             r = await con.fetchrow(
-                """SELECT u.id, u.username, u.is_admin FROM sessions s JOIN users u ON u.id=s.user_id
-                   WHERE s.token=$1 AND s.expires_at > now() AND u.active""", token)
+                """SELECT u.id, u.username, u.is_admin, coalesce(s.elevated_until > now(), false) AS elevated
+                   FROM sessions s JOIN users u ON u.id=s.user_id
+                   WHERE s.token=$1 AND s.expires_at > now() AND u.active""", token_key(token))
         return dict(r) if r else None
 
     async def delete_session(self, token: str) -> None:
         async with self.s.pool.acquire() as con:
-            await con.execute("DELETE FROM sessions WHERE token=$1", token)
+            await con.execute("DELETE FROM sessions WHERE token=$1", token_key(token))
+
+    async def password_hash(self, user_id: int) -> str | None:
+        async with self.s.pool.acquire() as con:
+            return await con.fetchval("SELECT password_hash FROM users WHERE id=$1 AND active", user_id)
+
+    async def elevate(self, token: str) -> None:
+        async with self.s.pool.acquire() as con:
+            await con.execute(f"UPDATE sessions SET elevated_until=now() + interval '{ELEVATE_MIN} minutes' WHERE token=$1",
+                              token_key(token))
+
+    # ---- server operations --------------------------------------------
+    async def ops_jobs(self, limit: int = 30) -> list[dict]:
+        async with self.s.pool.acquire() as con:
+            rows = await con.fetch(
+                """SELECT j.id, j.kind, j.params, j.status, j.exit_code, j.created_at, j.started_at, j.finished_at,
+                          u.username AS requested_by, j.requested_ip
+                   FROM ops_jobs j LEFT JOIN users u ON u.id=j.requested_by ORDER BY j.id DESC LIMIT $1""", limit)
+        out = []
+        for r in rows:
+            d = _row(r)
+            d["params"] = json.loads(d["params"]) if isinstance(d["params"], str) else d["params"]
+            out.append(d)
+        return out
+
+    async def ops_job(self, job_id: int) -> dict | None:
+        async with self.s.pool.acquire() as con:
+            r = await con.fetchrow(
+                """SELECT j.id, j.kind, j.params, j.status, j.exit_code, j.output, j.created_at, j.started_at,
+                          j.finished_at, j.cancel_requested, u.username AS requested_by
+                   FROM ops_jobs j LEFT JOIN users u ON u.id=j.requested_by WHERE j.id=$1""", job_id)
+        if r is None:
+            return None
+        d = _row(r)
+        d["params"] = json.loads(d["params"]) if isinstance(d["params"], str) else d["params"]
+        return d
+
+    async def ops_create(self, kind: str, params: dict, user_id: int, ip: str, max_pending: int) -> int | None:
+        async with self.s.pool.acquire() as con:
+            async with con.transaction():
+                await con.execute("LOCK TABLE ops_jobs IN SHARE ROW EXCLUSIVE MODE")
+                pending = await con.fetchval("SELECT count(*) FROM ops_jobs WHERE status IN ('queued','running')")
+                if pending >= max_pending:
+                    return None
+                return await con.fetchval(
+                    "INSERT INTO ops_jobs (kind, params, requested_by, requested_ip) VALUES ($1,$2::jsonb,$3,$4) RETURNING id",
+                    kind, json.dumps(params), user_id, ip)
+
+    async def ops_runner_alive(self) -> bool:
+        async with self.s.pool.acquire() as con:
+            v = await con.fetchval("SELECT value FROM app_settings WHERE key='ops_heartbeat'")
+        try:
+            return v is not None and datetime.now(timezone.utc).timestamp() - float(v) < 30
+        except ValueError:
+            return False
+
+    async def ops_cancel(self, job_id: int) -> bool:
+        async with self.s.pool.acquire() as con:
+            r = await con.execute(
+                "UPDATE ops_jobs SET cancel_requested=true, updated_at=now() WHERE id=$1 AND status IN ('queued','running')", job_id)
+        return r.endswith("1")
 
     # ---- market -------------------------------------------------------
     async def symbols(self) -> list[dict]:

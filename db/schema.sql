@@ -284,3 +284,23 @@ CREATE TABLE IF NOT EXISTS whale_flow (
 );
 CREATE INDEX IF NOT EXISTS whale_flow_ts ON whale_flow (ts);
 CREATE INDEX IF NOT EXISTS whale_positions_ts ON whale_positions (ts);
+
+-- ---- server operations started from the panel (admin only) ----------
+CREATE TABLE IF NOT EXISTS ops_jobs (
+    id                serial      PRIMARY KEY,
+    kind              text        NOT NULL,
+    params            jsonb       NOT NULL DEFAULT '{}',
+    status            text        NOT NULL DEFAULT 'queued',   -- queued | running | done | failed | cancelled
+    requested_by      integer     REFERENCES users(id) ON DELETE SET NULL,
+    requested_ip      text,
+    cancel_requested  boolean     NOT NULL DEFAULT false,
+    exit_code         integer,
+    output            text,
+    created_at        timestamptz NOT NULL DEFAULT now(),
+    started_at        timestamptz,
+    finished_at       timestamptz,
+    updated_at        timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS ops_jobs_status ON ops_jobs (status, id);
+-- a password re-check unlocks server operations for a short time, per session
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS elevated_until timestamptz;

@@ -110,6 +110,12 @@ class PortfolioService:
         lb = LBankFutures()
         try:
             markets = await lb.swap_markets()
+        except Exception as exc:
+            cached = await self._lbank_cache()
+            if cached is None:
+                raise
+            log.warning("LBank unreachable (%s); using the market list saved on %s", exc, cached["saved"])
+            return set(cached["allowed"]), cached["minimum"]
         finally:
             await lb.close()
         index = lbank_index(markets)
@@ -126,7 +132,18 @@ class PortfolioService:
             lb_price = price / (mult or 1)
             allowed.add(sym)
             minimum[sym] = max(5.0, float(amount_min) * lb_price, float(cost_min))
+        if allowed:
+            async with self.store.pool.acquire() as con:
+                await con.execute("""INSERT INTO app_settings (key, value) VALUES ('lbank_markets_cache', $1)
+                                     ON CONFLICT (key) DO UPDATE SET value=$1""",
+                                  json.dumps({"saved": datetime.now(timezone.utc).isoformat(timespec="minutes"),
+                                              "allowed": sorted(allowed), "minimum": minimum}))
         return allowed, minimum
+
+    async def _lbank_cache(self) -> dict | None:
+        async with self.store.pool.acquire() as con:
+            v = await con.fetchval("SELECT value FROM app_settings WHERE key='lbank_markets_cache'")
+        return json.loads(v) if v else None
 
     # ---- books ---------------------------------------------------------------
     async def books(self) -> dict[tuple[str, str], dict]:

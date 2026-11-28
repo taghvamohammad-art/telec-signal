@@ -196,3 +196,25 @@ def test_simulate_with_stops():
     tight = simulate(c, w, None, 0.0, 0.05, ohl)
     assert none["stops"].sum() == 0 and tight["stops"].sum() > 50
     assert far["stops"].sum() < tight["stops"].sum()
+
+
+def test_panel_fills_entries_for_days_saved_before_tracking():
+    import asyncio
+    from datetime import datetime, timezone
+
+    from app.web.repo import _fill_entries
+
+    d = lambda k: datetime(2026, 11, 24 + k, tzinfo=timezone.utc)  # noqa: E731
+    hist = [{"day": d(3), "positions": {"AUSDT": 10.0, "BUSDT": -4.0}},
+            {"day": d(2), "positions": {"AUSDT": 9.0, "BUSDT": 3.0}},
+            {"day": d(1), "positions": {"AUSDT": 8.0}}]
+    candles = [{"symbol": "AUSDT", "open_time": d(1), "close": 100.0}, {"symbol": "AUSDT", "open_time": d(3), "close": 110.0},
+               {"symbol": "BUSDT", "open_time": d(3), "close": 7.0}]
+
+    class Con:
+        async def fetch(self, sql, *a):
+            return hist if "portfolio_days" in sql else candles
+
+    out = asyncio.run(_fill_entries(Con(), 1, d(3), {"AUSDT": 10.0, "BUSDT": -4.0}))
+    assert out["AUSDT"]["entry"] == 100.0 and out["AUSDT"]["px"] == 110.0 and out["AUSDT"]["n"] == 10.0
+    assert out["BUSDT"]["entry"] == 7.0 and out["BUSDT"]["px"] == 7.0      # flipped to short on the last day

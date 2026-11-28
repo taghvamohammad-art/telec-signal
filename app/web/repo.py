@@ -33,6 +33,40 @@ def _row(r) -> dict:
     return d
 
 
+async def _fill_entries(con, book_id: int, day, pos: dict) -> dict:
+    """Days saved before entries were tracked: find each position's opening day in the book's history
+    and take the daily closes from the candle table."""
+    hist = await con.fetch("SELECT day, positions FROM portfolio_days WHERE book_id=$1 AND day <= $2 ORDER BY day DESC LIMIT 400",
+                           book_id, day)
+    rows = []
+    for h in hist:
+        p = json.loads(h["positions"]) if isinstance(h["positions"], str) else (h["positions"] or {})
+        rows.append((h["day"], {k: (v["n"] if isinstance(v, dict) else v) for k, v in p.items()}))
+    since = {}
+    for sym, v in pos.items():
+        n = v["n"] if isinstance(v, dict) else v
+        first = day
+        for d, p in rows:
+            x = p.get(sym)
+            if x is None or (x > 0) != (n > 0):
+                break
+            first = d
+        since[sym] = first
+    days = sorted({day, *since.values()})
+    closes = {(r["symbol"], r["open_time"]): r["close"] for r in await con.fetch(
+        "SELECT symbol, open_time, close FROM candles WHERE tf='1d' AND symbol = ANY($1::text[]) AND open_time = ANY($2::timestamptz[])",
+        list(pos), days)}
+    out = {}
+    for sym, v in pos.items():
+        d = dict(v) if isinstance(v, dict) else {"n": v}
+        if d.get("entry") is None:
+            d["entry"], d["since"] = closes.get((sym, since[sym])), dt_to_ms(since[sym])
+        if d.get("px") is None:
+            d["px"] = closes.get((sym, day))
+        out[sym] = d
+    return out
+
+
 def _position(symbol: str, v, prev) -> dict:
     d = v if isinstance(v, dict) else {"n": v}
     n, entry, px = d.get("n"), d.get("entry"), d.get("px")
@@ -102,6 +136,8 @@ class WebRepo:
                 pos = load(last["positions"]) if last else {}
                 before = load(prev["positions"]) if prev else {}
                 size = lambda v: v["n"] if isinstance(v, dict) else v  # noqa: E731  (older days stored a bare number)
+                if last and any(not isinstance(v, dict) or v.get("entry") is None or v.get("px") is None for v in pos.values()):
+                    pos = await _fill_entries(con, b["id"], last["day"], pos)
                 t = days[-1] if days else None
                 out.append({"combo": b["combo"], "mode": b["mode"], "capital": b["capital"], "equity": b["equity"],
                             "started_day": b["started_day"], "last_day": b["last_day"], "days": len(days),

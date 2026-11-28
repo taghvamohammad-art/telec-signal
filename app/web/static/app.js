@@ -500,6 +500,80 @@ function renderPortfolioBacktest() {
   })).join('');
 }
 
+
+// ---- Hyperliquid whales ---------------------------------------------------
+const WH_SORTS = [['pnl_all', 'سود کل'], ['roi_all', 'بازده کل'], ['pnl_month', 'سود ماه'], ['roi_month', 'بازده ماه'],
+  ['pnl_week', 'سود هفته'], ['pnl_day', 'سود امروز'], ['account_value', 'موجودی'], ['upnl', 'سود باز فعلی']];
+const wh = { data: null, sort: 'pnl_all', open: null };
+const usd = (v) => {
+  if (v == null) return '—';
+  const a = Math.abs(v), sgn = v < 0 ? '-' : '';
+  if (a >= 1e9) return `${sgn}$${(a / 1e9).toFixed(2)}B`;
+  if (a >= 1e6) return `${sgn}$${(a / 1e6).toFixed(2)}M`;
+  if (a >= 1e3) return `${sgn}$${(a / 1e3).toFixed(1)}K`;
+  return `${sgn}$${a.toFixed(0)}`;
+};
+const roiPct = (v) => (v == null ? '—' : `${v > 0 ? '+' : ''}${(v * 100).toFixed(1)}%`);
+const tone = (v) => (v > 0 ? 'pos' : v < 0 ? 'neg' : '');
+
+async function loadWhales() {
+  wh.data = await api('/api/whales');
+  const has = wh.data.wallets.length > 0;
+  $('#wh-empty').classList.toggle('hidden', has);
+  $('#wh-main').classList.toggle('hidden', !has);
+  if (!has) return;
+  $('#wh-flow-at').textContent = wh.data.flow_at ? when(wh.data.flow_at) : '';
+  const max = Math.max(1, ...wh.data.flow.map((f) => Math.max(f.long_notional, f.short_notional)));
+  $('#wh-flow').innerHTML = wh.data.flow.slice(0, 20).map((f) => {
+    const net = f.long_notional - f.short_notional;
+    return `<tr><td><bdi>${esc(f.coin)}</bdi></td><td class="num pos">${f.n_long}</td><td class="num neg">${f.n_short}</td>
+      <td class="num">${usd(f.long_notional)}</td><td class="num">${usd(f.short_notional)}</td>
+      <td><div class="bar" title="${net >= 0 ? 'غلبهٔ خرید' : 'غلبهٔ فروش'} ${usd(Math.abs(net))}">${net >= 0
+        ? `<i class="l" style="width:${(50 * net / max).toFixed(1)}%"></i>` : `<i class="s" style="width:${(50 * -net / max).toFixed(1)}%"></i>`}</div></td></tr>`;
+  }).join('');
+  renderWhales();
+}
+
+function renderWhales() {
+  $('#wh-sort').innerHTML = WH_SORTS.map(([k, l]) => `<button type="button" data-k="${k}" aria-pressed="${k === wh.sort}">${l}</button>`).join('');
+  document.querySelectorAll('.wh-table th[data-k]').forEach((th) => th.classList.toggle('sorted', th.dataset.k === wh.sort));
+  const rows = [...wh.data.wallets].sort((a, b) => (b[wh.sort] ?? -Infinity) - (a[wh.sort] ?? -Infinity));
+  $('#wh-rows').innerHTML = rows.map((w, i) => {
+    const short = `${w.address.slice(0, 6)}…${w.address.slice(-4)}`;
+    const dir = w.n_pos ? (w.net > 0 ? `<span class="pos">خالص خرید</span>` : w.net < 0 ? `<span class="neg">خالص فروش</span>` : '') : '';
+    const row = `<tr class="wh-row" data-addr="${esc(w.address)}"><td class="num">${i + 1}</td>
+      <td><a class="wh-addr" href="https://hypurrscan.io/address/${esc(w.address)}" target="_blank" rel="noopener noreferrer" dir="ltr">${esc(w.name || short)}</a></td>
+      <td class="num">${usd(w.account_value)}</td><td class="num ${tone(w.pnl_all)}">${usd(w.pnl_all)}</td><td class="num ${tone(w.roi_all)}">${roiPct(w.roi_all)}</td>
+      <td class="num ${tone(w.pnl_month)}">${usd(w.pnl_month)}</td><td class="num ${tone(w.roi_month)}">${roiPct(w.roi_month)}</td>
+      <td class="num ${tone(w.pnl_week)}">${usd(w.pnl_week)}</td><td class="num ${tone(w.pnl_day)}">${usd(w.pnl_day)}</td>
+      <td><span class="num">${w.n_pos}</span> <span class="small">${dir}</span></td><td class="num ${tone(w.upnl)}">${w.n_pos ? usd(w.upnl) : '—'}</td></tr>`;
+    return row + (wh.open === w.address ? `<tr class="wh-detail"><td colspan="11" id="wh-detail">در حال بارگذاری…</td></tr>` : '');
+  }).join('');
+  if (wh.open) loadWhale(wh.open);
+}
+
+async function loadWhale(addr) {
+  const pos = await api(`/api/whales/${addr}`);
+  const cell = $('#wh-detail'); if (!cell) return;
+  cell.innerHTML = pos.length ? `<table><thead><tr><th>ارز</th><th>جهت</th><th>اندازه</th><th>قیمت ورود</th><th>اهرم</th><th>سود باز</th></tr></thead><tbody>${
+    pos.map((p) => `<tr><td><bdi>${esc(p.coin)}</bdi></td><td class="${sideCls(p.size > 0 ? 1 : -1)}">${sideFa(p.size > 0 ? 1 : -1)}</td>
+      <td class="num">${usd(Math.abs(p.notional))}</td><td class="num">${p.entry_px != null ? fmtPx(p.entry_px) : '—'}</td>
+      <td class="num">${p.leverage != null ? `${p.leverage}x` : '—'}</td><td class="num ${tone(p.upnl)}">${usd(p.upnl)}</td></tr>`).join('')}</tbody></table>`
+    : '<span class="muted">در آخرین نمونه پوزیشن بازی نداشت.</span>';
+}
+
+function bindWhales() {
+  const setSort = (k) => { if (!k) return; wh.sort = k; renderWhales(); };
+  $('#wh-sort').addEventListener('click', (e) => setSort(e.target.closest('[data-k]')?.dataset.k));
+  document.querySelector('.wh-table thead').addEventListener('click', (e) => setSort(e.target.closest('th[data-k]')?.dataset.k));
+  $('#wh-rows').addEventListener('click', (e) => {
+    if (e.target.closest('a')) return;
+    const tr = e.target.closest('tr.wh-row'); if (!tr) return;
+    wh.open = wh.open === tr.dataset.addr ? null : tr.dataset.addr;
+    renderWhales();
+  });
+}
+
 // ---- server operations (admin) --------------------------------------------
 const OPS_STATUS = { queued: 'در صف', running: 'در حال اجرا', done: 'تمام شد', failed: 'خطا', cancelled: 'لغو شد' };
 const ops = { kinds: [], kind: null, job: null, timer: null };
@@ -650,6 +724,7 @@ function showView(name) {
   if (name === 'backtest') loadBacktests().catch(showError);
   if (name === 'ops') loadOps().catch(showError);
   if (name === 'portfolio') loadPortfolio().catch(showError);
+  if (name === 'whales') loadWhales().catch(showError);
   if (name !== 'ops') clearTimeout(ops.timer);
 }
 
@@ -685,10 +760,11 @@ function bind() {
   });
   window.addEventListener('hashchange', () => {
     const v = location.hash.slice(1);
-    if (['chart', 'portfolio', 'signals', 'paper', 'backtest', 'ops'].includes(v)) showView(v);
+    if (['chart', 'portfolio', 'whales', 'signals', 'paper', 'backtest', 'ops'].includes(v)) showView(v);
   });
   bindCustom();
   bindOps();
+  bindWhales();
   $('#pf-combo').addEventListener('click', (e) => { const b = e.target.closest('[data-combo]'); if (!b) return; pf.combo = b.dataset.combo;
     document.querySelectorAll('#pf-combo button').forEach((x) => x.setAttribute('aria-pressed', x === b)); renderPortfolio(); });
   rememberGlossary();
@@ -710,7 +786,7 @@ async function main() {
   state.symbol = state.symbols.length ? state.symbols[0].symbol : null;
   renderChips();
   const start = (location.hash || '#portfolio').slice(1);
-  showView(['chart', 'portfolio', 'signals', 'paper', 'backtest', ...(me.is_admin ? ['ops'] : [])].includes(start) ? start : 'portfolio');
+  showView(['chart', 'portfolio', 'whales', 'signals', 'paper', 'backtest', ...(me.is_admin ? ['ops'] : [])].includes(start) ? start : 'portfolio');
   if (start !== 'chart') loadChart().catch(showError);
   // refresh the visible view every minute (candles close every 15 minutes, marks every 5)
   setInterval(() => {
@@ -718,6 +794,7 @@ async function main() {
     if (v === 'chart') loadChart(false).catch(showError);
     if (v === 'signals') loadSignals().catch(showError);
     if (v === 'paper') loadPaper().catch(showError);
+    if (v === 'whales') loadWhales().catch(showError);
   }, 60000);
 }
 

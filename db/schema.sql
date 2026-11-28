@@ -260,6 +260,11 @@ CREATE TABLE IF NOT EXISTS whale_wallets (
     vlm_month      double precision,
     PRIMARY KEY (day, address)
 );
+ALTER TABLE whale_wallets ADD COLUMN IF NOT EXISTS pnl_week double precision;
+ALTER TABLE whale_wallets ADD COLUMN IF NOT EXISTS roi_week double precision;
+ALTER TABLE whale_wallets ADD COLUMN IF NOT EXISTS pnl_day double precision;
+ALTER TABLE whale_wallets ADD COLUMN IF NOT EXISTS roi_day double precision;
+ALTER TABLE whale_wallets ADD COLUMN IF NOT EXISTS name text;
 CREATE TABLE IF NOT EXISTS whale_positions (
     ts             timestamptz      NOT NULL,
     address        text             NOT NULL,

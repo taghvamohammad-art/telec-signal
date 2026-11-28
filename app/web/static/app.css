@@ -289,3 +289,17 @@ th[title] { cursor: help; text-decoration: underline dotted rgba(145,151,174,.6)
 .pf-src summary::-webkit-details-marker { display: none; }
 .pf-src[open] summary { color: var(--saffron); }
 .pf-src ul { margin: 6px 0 0; padding: 0; list-style: none; display: grid; gap: 3px; font-size: 13px; white-space: nowrap; }
+
+/* whales */
+.wh-sort { margin-bottom: 10px; flex-wrap: wrap; }
+.wh-table th[data-k] { cursor: pointer; }
+.wh-table th.sorted { color: var(--saffron); }
+.wh-table tbody tr.wh-row { cursor: pointer; }
+.wh-table tbody tr.wh-row:hover td { background: var(--surface-2); }
+.wh-detail td { background: var(--bg); padding: 10px 14px; }
+.wh-detail table { width: 100%; font-size: 13px; }
+.wh-addr { font-family: ui-monospace, Consolas, monospace; font-size: 13px; }
+.bar { position: relative; height: 8px; min-width: 120px; background: var(--line); border-radius: 999px; overflow: hidden; }
+.bar i { position: absolute; top: 0; bottom: 0; }
+.bar i.l { background: var(--long); inset-inline-start: 50%; }
+.bar i.s { background: var(--short); inset-inline-end: 50%; }

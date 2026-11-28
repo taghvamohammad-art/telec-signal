@@ -123,6 +123,42 @@ class WebRepo:
         load = lambda v: json.loads(v) if isinstance(v, str) else v  # noqa: E731
         return {"id": r["id"], "created_at": dt_to_ms(r["created_at"]), "summary": load(r["summary"]), "curves": load(r["curve"])}
 
+    # ---- Hyperliquid whales ------------------------------------------
+    async def whales(self) -> dict:
+        async with self.s.pool.acquire() as con:
+            day = await con.fetchval("SELECT max(day) FROM whale_wallets")
+            pts = await con.fetchval("SELECT max(ts) FROM whale_positions")
+            fts = await con.fetchval("SELECT max(ts) FROM whale_flow")
+            if day is None:
+                return {"wallets": [], "flow": [], "day": None}
+            rows = await con.fetch(
+                """SELECT w.address, w.rank, w.name, w.account_value, w.pnl_all, w.roi_all, w.pnl_month, w.roi_month,
+                          w.pnl_week, w.roi_week, w.pnl_day, w.roi_day,
+                          count(p.coin) AS n_pos, coalesce(sum(abs(p.notional)), 0) AS gross,
+                          coalesce(sum(p.notional), 0) AS net, coalesce(sum(p.upnl), 0) AS upnl,
+                          max(p.account_value) AS acct_now
+                   FROM whale_wallets w
+                   LEFT JOIN whale_positions p ON p.address = w.address AND p.ts = $2
+                   WHERE w.day = $1
+                   GROUP BY w.address, w.rank, w.name, w.account_value, w.pnl_all, w.roi_all, w.pnl_month, w.roi_month,
+                            w.pnl_week, w.roi_week, w.pnl_day, w.roi_day
+                   ORDER BY w.rank""", day, pts)
+            flow = await con.fetch(
+                """SELECT coin, n_long, n_short, long_notional, short_notional, wallets FROM whale_flow
+                   WHERE ts = $1 ORDER BY long_notional + short_notional DESC LIMIT 40""", fts) if fts else []
+        return {"day": day.isoformat(), "positions_at": dt_to_ms(pts) if pts else None, "flow_at": dt_to_ms(fts) if fts else None,
+                "wallets": [_row(r) for r in rows], "flow": [_row(r) for r in flow]}
+
+    async def whale(self, address: str) -> list[dict]:
+        async with self.s.pool.acquire() as con:
+            pts = await con.fetchval("SELECT max(ts) FROM whale_positions WHERE address=$1", address)
+            if pts is None:
+                return []
+            rows = await con.fetch(
+                """SELECT coin, size, notional, entry_px, leverage, upnl FROM whale_positions
+                   WHERE address=$1 AND ts=$2 ORDER BY abs(notional) DESC""", address, pts)
+        return [_row(r) for r in rows]
+
     # ---- server operations --------------------------------------------
     async def ops_jobs(self, limit: int = 30) -> list[dict]:
         async with self.s.pool.acquire() as con:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import re
 import time
 from collections import defaultdict, deque
 from pathlib import Path
@@ -161,6 +162,24 @@ async def api_portfolio_backtest(request: Request) -> Response:
     if await current_user(request) is None:
         return _unauth()
     return JSONResponse(await request.app.state.repo.portfolio_backtest())
+
+
+WALLET_RE = re.compile(r"^0x[0-9a-f]{40}$")
+
+
+async def api_whales(request: Request) -> Response:
+    if await current_user(request) is None:
+        return _unauth()
+    return JSONResponse(await request.app.state.repo.whales())
+
+
+async def api_whale(request: Request) -> Response:
+    if await current_user(request) is None:
+        return _unauth()
+    address = request.path_params["address"].lower()
+    if not WALLET_RE.match(address):
+        return JSONResponse({"error": "آدرس نامعتبر"}, status_code=400)
+    return JSONResponse(await request.app.state.repo.whale(address))
 
 
 async def api_backtests(request: Request) -> Response:
@@ -398,6 +417,8 @@ def create_app(repo_factory=None) -> Starlette:
         Route("/api/paper/reset", api_paper_reset, methods=["POST"]),
         Route("/api/backtests", api_backtests),
         Route("/api/portfolio", api_portfolio),
+        Route("/api/whales", api_whales),
+        Route("/api/whales/{address}", api_whale),
         Route("/api/portfolio/backtest", api_portfolio_backtest),
         Route("/api/custom-symbols", api_custom_list),
         Route("/api/custom-symbols", api_custom_add, methods=["POST"]),

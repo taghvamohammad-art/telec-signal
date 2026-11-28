@@ -15,6 +15,8 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 19V5M4 19h16M8 15v-4M12 15V8M16 15v-6"/></svg>نمودار</button>
     <button role="tab" data-view="portfolio" aria-selected="false">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9v9Z"/><path d="M12 3a9 9 0 0 1 9 9h-9"/></svg>پرتفوی</button>
+    <button role="tab" data-view="whales" aria-selected="false">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 13c2-4 6-6 10-6 3 0 6 1.5 8 4-2 3.5-5 5-8.5 5-1.5 0-3-.3-4.5-1L4 17l1-3.5"/><circle cx="15.5" cy="10.5" r=".8" fill="currentColor"/></svg>نهنگ‌ها</button>
     <button role="tab" data-view="signals" aria-selected="false" class="hidden">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M5 12h3l2-6 4 12 2-6h3"/></svg>سیگنال‌ها</button>
     <button role="tab" data-view="paper" aria-selected="false" class="hidden">
@@ -93,6 +95,30 @@
       <div class="table-wrap"><table>
         <thead><tr><th>ارز</th><th>جهت</th><th title="سبک‌هایی که این پوزیشن را ساخته‌اند؛ روی نام بزنید تا همه را ببینید">سبک</th><th>اندازه (دلار)</th><th>قیمت ورود</th><th>ورود از</th><th>قیمت فعلی</th><th>سود/ضرر از ورود</th><th>امروز</th></tr></thead>
         <tbody id="pf-pos"></tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <!-- Hyperliquid whales -->
+  <section class="view" id="view-whales" hidden>
+    <div class="view-head">
+      <div><h1>نهنگ‌های Hyperliquid</h1><p>۲۰۰ معامله‌گر بزرگی که در طول زمان سود ثابت داشته‌اند و این ماه هم سودده‌اند. پوزیشن‌ها هر ساعت و جهت کلی هر ۱۵ دقیقه به‌روز می‌شود.</p></div>
+    </div>
+    <p class="pf-exit">این بخش برای اطلاع است. هنوز ثابت نشده که هم‌جهت‌شدن با نهنگ‌ها سود می‌دهد؛ بعضی از شورت‌ها هم پوشش ریسکِ دارایی‌هایشان در جای دیگر است. بعد از چند ماه جمع‌کردن داده، این را مثل بقیهٔ سبک‌ها آزمایش می‌کنیم.</p>
+    <div id="wh-empty" class="empty hidden"><b>هنوز داده‌ای جمع نشده.</b>سرویس نهنگ‌ها باید روشن باشد (تب «سرور» ← وضعیت سرور).</div>
+    <div id="wh-main" class="hidden">
+      <h3 class="section-title">جهت پول نهنگ‌ها در هر ارز <span class="count" id="wh-flow-at"></span></h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>ارز</th><th>خرید</th><th>فروش</th><th>حجم خرید</th><th>حجم فروش</th><th>غلبه</th></tr></thead>
+        <tbody id="wh-flow"></tbody>
+      </table></div>
+      <h3 class="section-title">نهنگ‌ها، مرتب‌شده بر اساس نتیجه</h3>
+      <div class="seg wh-sort" id="wh-sort" role="group" aria-label="مرتب‌سازی"></div>
+      <div class="table-wrap"><table class="wh-table">
+        <thead><tr><th>#</th><th>کیف‌پول</th><th data-k="account_value">موجودی</th><th data-k="pnl_all">سود کل</th><th data-k="roi_all">بازده کل</th>
+          <th data-k="pnl_month">سود ماه</th><th data-k="roi_month">بازده ماه</th><th data-k="pnl_week">سود هفته</th><th data-k="pnl_day">سود امروز</th>
+          <th data-k="n_pos">پوزیشن‌ها</th><th data-k="upnl">سود باز فعلی</th></tr></thead>
+        <tbody id="wh-rows"></tbody>
       </table></div>
     </div>
   </section>

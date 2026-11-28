@@ -63,10 +63,14 @@ def parse_row(row: dict) -> dict | None:
         if isinstance(item, (list, tuple)) and len(item) == 2 and isinstance(item[1], dict):
             perf[item[0]] = item[1]
     allt, month = perf.get("allTime", {}), perf.get("month", {})
+    week, day = perf.get("week", {}), perf.get("day", {})
     return {"address": addr.lower(), "account_value": _num(row.get("accountValue")),
             "pnl_all": _num(allt.get("pnl")), "roi_all": _num(allt.get("roi")),
             "pnl_month": _num(month.get("pnl")), "roi_month": _num(month.get("roi")),
-            "vlm_month": _num(month.get("vlm"))}
+            "vlm_month": _num(month.get("vlm")),
+            "pnl_week": _num(week.get("pnl")), "roi_week": _num(week.get("roi")),
+            "pnl_day": _num(day.get("pnl")), "roi_day": _num(day.get("roi")),
+            "name": (row.get("displayName") or None)}
 
 
 def qualifies(w: dict, r: Rules = Rules()) -> bool:
@@ -167,10 +171,12 @@ class Collector:
             raise RuntimeError("leaderboard parsed but no wallet qualified (format change?)")
         async with self.store.pool.acquire() as con:
             await con.executemany(
-                """INSERT INTO whale_wallets (day, address, rank, account_value, pnl_all, roi_all, pnl_month, roi_month, vlm_month)
-                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT DO NOTHING""",
+                """INSERT INTO whale_wallets (day, address, rank, account_value, pnl_all, roi_all, pnl_month, roi_month, vlm_month,
+                                              pnl_week, roi_week, pnl_day, roi_day, name)
+                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) ON CONFLICT DO NOTHING""",
                 [(today, w["address"], i, w["account_value"], w["pnl_all"], w["roi_all"], w["pnl_month"],
-                  w["roi_month"], w["vlm_month"]) for i, w in enumerate(chosen, 1)])
+                  w["roi_month"], w["vlm_month"], w.get("pnl_week"), w.get("roi_week"), w.get("pnl_day"), w.get("roi_day"),
+                  (w.get("name") or None) and str(w["name"])[:40]) for i, w in enumerate(chosen, 1)])
         self.wallets, self.wallets_day = [w["address"] for w in chosen], today
         log.info("chose %d wallets for %s (top all-time PnL %.0f USD)", len(chosen), today, chosen[0]["pnl_all"])
 

@@ -182,6 +182,12 @@ async def api_whale(request: Request) -> Response:
     return JSONResponse(await request.app.state.repo.whale(address))
 
 
+async def api_news(request: Request) -> Response:
+    if await current_user(request) is None:
+        return _unauth()
+    return JSONResponse(await request.app.state.repo.news())
+
+
 async def api_backtests(request: Request) -> Response:
     if await current_user(request) is None:
         return _unauth()
@@ -418,6 +424,7 @@ def create_app(repo_factory=None) -> Starlette:
         Route("/api/backtests", api_backtests),
         Route("/api/portfolio", api_portfolio),
         Route("/api/whales", api_whales),
+        Route("/api/news", api_news),
         Route("/api/whales/{address}", api_whale),
         Route("/api/portfolio/backtest", api_portfolio_backtest),
         Route("/api/custom-symbols", api_custom_list),

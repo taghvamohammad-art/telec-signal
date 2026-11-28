@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 PY = ".venv/bin/python"
-SERVICES = ["telec-data", "telec-analysis", "telec-web", "telec-bot", "telec-whales", "telec-portfolio"]
+SERVICES = ["telec-data", "telec-analysis", "telec-web", "telec-bot", "telec-whales", "telec-portfolio", "telec-news"]
 RUNNER = "telec-ops"
 SYMBOL_RE = re.compile(r"^[A-Z0-9]{2,20}USDT$")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -138,6 +138,8 @@ KINDS: dict[str, JobKind] = {k.key: k for k in [
             timeout_s=3600),
     JobKind("portfolio_backtest", "بک‌تست موتور پرتفوی", "همان حساب‌های ۳۰۰۰ دلاری (اجرایی و ایده‌آل) را روز به روز روی کل تاریخچه اجرا می‌کند.",
             "بک‌تست", timeout_s=2 * 3600),
+    JobKind("news_once", "خواندن اخبار همین حالا", "یک دور همهٔ منابع خبری را می‌خواند و وضعیت هر منبع را نشان می‌دهد.", "داده",
+            timeout_s=600),
     JobKind("whales_once", "نمونهٔ پوزیشن نهنگ‌ها", "یک بار پوزیشن نهنگ‌های Hyperliquid را می‌خواند و خلاصه می‌دهد.", "داده",
             timeout_s=600),
 ]}
@@ -196,6 +198,8 @@ def build_steps(key: str, p: dict, app_dir: str) -> list[Step]:
         return [Step((PY, "-m", "app.portfolio.service", "--once"))]
     if key == "portfolio_backtest":
         return [Step((PY, "-m", "app.portfolio.backtest"))]
+    if key == "news_once":
+        return [Step((PY, "-m", "app.news.service", "--once"))]
     if key == "whales_once":
         return [Step((PY, "-m", "app.whales.collector", "--once"))]
     raise InvalidParams("کار ناشناخته")

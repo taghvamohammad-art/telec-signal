@@ -159,6 +159,58 @@ class WebRepo:
                    WHERE address=$1 AND ts=$2 ORDER BY abs(notional) DESC""", address, pts)
         return [_row(r) for r in rows]
 
+    # ---- news ------------------------------------------------------------
+    async def news(self, hours: int = 72) -> dict:
+        async with self.s.pool.acquire() as con:
+            rows = await con.fetch(
+                """SELECT id, source, source_group, url, title, published_at, category, coins, importance, cluster_id
+                   FROM news_items WHERE published_at > now() - make_interval(hours => $1) ORDER BY published_at DESC""", hours)
+            books = await con.fetch("SELECT positions FROM portfolio_books WHERE mode='exec'")
+            events = await con.fetch(
+                """SELECT title, country, impact, ts, forecast, previous, actual FROM econ_events
+                   WHERE ts > now() - interval '6 hours' AND ts < now() + interval '8 days' ORDER BY ts""")
+            sources = await con.fetch(
+                """SELECT name, last_ok, last_error, coalesce(last_ok > coalesce(last_error_at, 'epoch'), false) AS ok
+                   FROM news_sources ORDER BY name""")
+        held = set()
+        for b in books:
+            pos = json.loads(b["positions"]) if isinstance(b["positions"], str) else (b["positions"] or {})
+            for sym in pos:
+                base = sym[:-4]
+                for p in ("1000000", "1000", "100"):
+                    if base.startswith(p) and len(base) > len(p):
+                        base = base[len(p):]
+                held.add(base)
+        stories: dict[int, dict] = {}
+        for r in reversed(rows):  # oldest first: the first item of a cluster is the original report
+            cid = r["cluster_id"] or r["id"]
+            st = stories.get(cid)
+            if st is None:
+                st = stories[cid] = {"id": cid, "title": r["title"], "url": r["url"], "category": r["category"],
+                                     "published": dt_to_ms(r["published_at"]), "importance": r["importance"],
+                                     "official": False, "coins": set(), "sources": []}
+            st["importance"] = max(st["importance"], r["importance"])
+            st["official"] = st["official"] or r["source_group"] == "official"
+            st["coins"].update(r["coins"] or [])
+            st["latest"] = dt_to_ms(r["published_at"])
+            if r["source"] not in [x["name"] for x in st["sources"]]:
+                st["sources"].append({"name": r["source"], "url": r["url"]})
+        out = []
+        for st in stories.values():
+            st["coins"] = sorted(st["coins"])
+            st["held"] = sorted(set(st["coins"]) & held)
+            st["verified"] = len(st["sources"]) >= 2 or st["official"]
+            out.append(st)
+        out.sort(key=lambda x: x["latest"], reverse=True)
+        from app.news.classify import COUNTRY_FA, event_fa
+
+        evs = []
+        for e in events:
+            d = _row(e)
+            d["title_fa"], d["country_fa"] = event_fa(d["title"]), COUNTRY_FA.get(d["country"], d["country"])
+            evs.append(d)
+        return {"stories": out[:300], "events": evs, "sources": [_row(x) for x in sources]}
+
     # ---- server operations --------------------------------------------
     async def ops_jobs(self, limit: int = 30) -> list[dict]:
         async with self.s.pool.acquire() as con:

@@ -347,3 +347,40 @@ CREATE TABLE IF NOT EXISTS bot_outbox (
     created_at  timestamptz NOT NULL DEFAULT now(),
     sent_at     timestamptz
 );
+
+-- ---- news (rule-based, no AI) ----------------------------------------
+CREATE TABLE IF NOT EXISTS news_items (
+    id             serial      PRIMARY KEY,
+    source         text        NOT NULL,
+    source_group   text        NOT NULL,          -- crypto | world | official
+    url            text        NOT NULL UNIQUE,
+    title          text        NOT NULL,
+    summary        text,
+    published_at   timestamptz NOT NULL,
+    fetched_at     timestamptz NOT NULL DEFAULT now(),
+    category       text        NOT NULL,
+    coins          text[]      NOT NULL DEFAULT '{}',
+    importance     integer     NOT NULL DEFAULT 1,
+    cluster_id     integer,                       -- same story across sources
+    verified_bump  boolean     NOT NULL DEFAULT false,
+    alerted_at     timestamptz
+);
+CREATE INDEX IF NOT EXISTS news_items_pub ON news_items (published_at DESC);
+CREATE INDEX IF NOT EXISTS news_items_cluster ON news_items (cluster_id);
+CREATE TABLE IF NOT EXISTS news_sources (
+    name           text        PRIMARY KEY,
+    last_ok        timestamptz,
+    last_error     text,
+    last_error_at  timestamptz,
+    items          integer     NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS econ_events (
+    title     text        NOT NULL,
+    country   text        NOT NULL,
+    impact    text        NOT NULL,
+    ts        timestamptz NOT NULL,
+    forecast  text,
+    previous  text,
+    actual    text,
+    PRIMARY KEY (title, country, ts)
+);

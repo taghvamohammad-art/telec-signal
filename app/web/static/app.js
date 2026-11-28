@@ -574,6 +574,58 @@ function bindWhales() {
   });
 }
 
+
+// ---- news --------------------------------------------------------------
+const CAT_FA = { hack: 'هک و سرقت', delist: 'حذف از صرافی', war: 'سیاست و جنگ', macro: 'اقتصاد کلان', regulation: 'قانون‌گذاری',
+  etf: 'ای‌تی‌اف و نهادی', listing: 'لیست شدن', market: 'بازار کریپتو', world: 'جهان' };
+const NW_FILTERS = [['all', 'همه'], ['important', 'مهم'], ['verified', 'تأییدشده'], ['held', 'ارزهای پرتفوی'],
+  ['hack', 'هک'], ['delist', 'حذف'], ['macro', 'اقتصاد کلان'], ['war', 'سیاست و جنگ'], ['regulation', 'قانون‌گذاری']];
+const nw = { data: null, filter: 'all' };
+const ago = (ms) => {
+  const m = Math.max(0, Math.round((Date.now() - ms) / 60000));
+  if (m < 60) return `${m} دقیقه پیش`;
+  if (m < 1440) return `${Math.round(m / 60)} ساعت پیش`;
+  return `${Math.round(m / 1440)} روز پیش`;
+};
+
+async function loadNews() {
+  nw.data = await api('/api/news');
+  const has = nw.data.stories.length > 0 || nw.data.events.length > 0;
+  $('#nw-empty').classList.toggle('hidden', has);
+  $('#nw-main').classList.toggle('hidden', !has);
+  if (!has) return;
+  const now = Date.now();
+  $('#nw-events').innerHTML = nw.data.events.length ? nw.data.events.map((e) => {
+    const d = new Date(e.ts);
+    const when = d.toLocaleString('fa-IR', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tehran' });
+    const nums = [e.actual ? `واقعی <b class="num">${esc(e.actual)}</b>` : '', e.forecast ? `پیش‌بینی <span class="num">${esc(e.forecast)}</span>` : '',
+      e.previous ? `قبلی <span class="num">${esc(e.previous)}</span>` : ''].filter(Boolean).join(' · ');
+    return `<div class="nw-ev ${esc(e.impact)}${e.ts < now ? ' past' : ''}"><span class="muted">${when} · ${esc(e.country_fa)}</span>
+      <b>${esc(e.title_fa || e.title)}</b>${e.title_fa ? `<span class="muted small" dir="ltr">${esc(e.title)}</span>` : ''}${nums ? `<span class="small">${nums}</span>` : ''}</div>`;
+  }).join('') : '<p class="muted small">رویداد مهمی ثبت نشده.</p>';
+  const okSrc = nw.data.sources.filter((x) => x.ok).length;
+  const bad = nw.data.sources.filter((x) => !x.ok).map((x) => x.name);
+  $('#nw-sources').textContent = `منابع فعال: ${okSrc} از ${nw.data.sources.length}` + (bad.length ? ` · بدون پاسخ: ${bad.join('، ')}` : '');
+  renderNews();
+}
+
+function renderNews() {
+  $('#nw-filters').innerHTML = NW_FILTERS.map(([k, l]) => `<button type="button" data-k="${k}" aria-pressed="${k === nw.filter}">${l}</button>`).join('');
+  const f = nw.filter;
+  const list = nw.data.stories.filter((s) => f === 'all' || (f === 'important' && s.importance >= 4) || (f === 'verified' && s.verified)
+    || (f === 'held' && s.held.length) || s.category === f);
+  $('#nw-count').textContent = list.length;
+  $('#nw-list').innerHTML = list.length ? list.slice(0, 150).map((s) => `<li class="nw-item i${s.importance}">
+      <a class="t" href="${esc(s.url)}" target="_blank" rel="noopener noreferrer" dir="ltr">${esc(s.title)}</a>
+      <div class="nw-meta"><span class="tag cat-${esc(s.category)}">${CAT_FA[s.category] || esc(s.category)}</span>
+        ${s.verified ? `<span class="tag ok">تأییدشده</span>` : ''}
+        ${s.coins.map((c) => `<span class="tag${s.held.includes(c) ? ' held' : ''}">${esc(c)}</span>`).join('')}
+        <span>${ago(s.published)}</span>
+        <span>${s.sources.map((x) => `<a href="${esc(x.url)}" target="_blank" rel="noopener noreferrer">${esc(x.name)}</a>`).join('، ')}</span>
+        <span title="اهمیت از ۱ تا ۵">اهمیت <b class="num">${s.importance}</b></span></div></li>`).join('')
+    : '<li class="muted">خبری با این فیلتر نیست.</li>';
+}
+
 // ---- server operations (admin) --------------------------------------------
 const OPS_STATUS = { queued: 'در صف', running: 'در حال اجرا', done: 'تمام شد', failed: 'خطا', cancelled: 'لغو شد' };
 const ops = { kinds: [], kind: null, job: null, timer: null };
@@ -725,6 +777,7 @@ function showView(name) {
   if (name === 'ops') loadOps().catch(showError);
   if (name === 'portfolio') loadPortfolio().catch(showError);
   if (name === 'whales') loadWhales().catch(showError);
+  if (name === 'news') loadNews().catch(showError);
   if (name !== 'ops') clearTimeout(ops.timer);
 }
 
@@ -760,11 +813,12 @@ function bind() {
   });
   window.addEventListener('hashchange', () => {
     const v = location.hash.slice(1);
-    if (['chart', 'portfolio', 'whales', 'signals', 'paper', 'backtest', 'ops'].includes(v)) showView(v);
+    if (['chart', 'portfolio', 'whales', 'news', 'signals', 'paper', 'backtest', 'ops'].includes(v)) showView(v);
   });
   bindCustom();
   bindOps();
   bindWhales();
+  $('#nw-filters').addEventListener('click', (e) => { const b = e.target.closest('[data-k]'); if (b) { nw.filter = b.dataset.k; renderNews(); } });
   $('#pf-combo').addEventListener('click', (e) => { const b = e.target.closest('[data-combo]'); if (!b) return; pf.combo = b.dataset.combo;
     document.querySelectorAll('#pf-combo button').forEach((x) => x.setAttribute('aria-pressed', x === b)); renderPortfolio(); });
   rememberGlossary();
@@ -786,7 +840,7 @@ async function main() {
   state.symbol = state.symbols.length ? state.symbols[0].symbol : null;
   renderChips();
   const start = (location.hash || '#portfolio').slice(1);
-  showView(['chart', 'portfolio', 'whales', 'signals', 'paper', 'backtest', ...(me.is_admin ? ['ops'] : [])].includes(start) ? start : 'portfolio');
+  showView(['chart', 'portfolio', 'whales', 'news', 'signals', 'paper', 'backtest', ...(me.is_admin ? ['ops'] : [])].includes(start) ? start : 'portfolio');
   if (start !== 'chart') loadChart().catch(showError);
   // refresh the visible view every minute (candles close every 15 minutes, marks every 5)
   setInterval(() => {
@@ -795,6 +849,7 @@ async function main() {
     if (v === 'signals') loadSignals().catch(showError);
     if (v === 'paper') loadPaper().catch(showError);
     if (v === 'whales') loadWhales().catch(showError);
+    if (v === 'news') loadNews().catch(showError);
   }, 60000);
 }
 

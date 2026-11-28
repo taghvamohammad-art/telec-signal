@@ -33,6 +33,7 @@ function decimals(p) {
 }
 const fp = (p, ref) => p == null ? '—' : Number(p).toLocaleString('en-US', { minimumFractionDigits: decimals(ref ?? p), maximumFractionDigits: decimals(ref ?? p) });
 const money = (v, sign = false) => v == null ? '—' : (sign && v > 0 ? '+' : '') + Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtPx = (v) => { const a = Math.abs(v); const d = a >= 1000 ? 1 : a >= 1 ? 4 : a >= 0.01 ? 5 : 8; return Number(v).toLocaleString('en-US', { maximumFractionDigits: d }); };
 const fr = (v, d = 2) => v == null ? '—' : `${v > 0 ? '+' : ''}${Number(v).toFixed(d)}`;
 const pct = (v) => v == null ? '—' : `${v}%`;
 const when = (ms) => new Date(ms).toLocaleString('fa-IR', { dateStyle: 'medium', timeStyle: 'short' });
@@ -453,16 +454,27 @@ function renderPortfolio() {
     t && t.dropped ? `${t.dropped} پوزیشن پیشنهادی به خاطر نبودن در ال‌بانک یا کوچک‌تر بودن از حداقل سفارش حذف شد` : '',
     book.closed.length ? `امروز بسته شد: ${book.closed.map((s) => s.replace('USDT', '')).join('، ')}` : '',
   ].filter(Boolean).join(' · ') : '';
+  const lastDay = book ? book.last_day : 0;
   $('#pf-pos').innerHTML = book && book.positions.length ? book.positions.map((p) => {
     const side = p.notional > 0 ? 1 : -1;
     let chg = '<span class="muted">—</span>';
     if (p.prev == null) chg = '<span class="tag new">جدید</span>';
     else if ((p.prev > 0) !== (p.notional > 0)) chg = '<span class="tag new">تغییر جهت</span>';
-    else chg = `<span class="num">${fr(Math.abs(p.notional) - Math.abs(p.prev))}</span>`;
+    else chg = `<span class="num">${fr(Math.abs(p.notional) - Math.abs(p.prev))}$</span>`;
+    const held = p.since != null ? Math.round((lastDay - p.since) / 86400000) : null;
+    const since = p.since != null ? `${new Date(p.since + 86400000).toLocaleDateString('fa-IR', { month: 'short', day: 'numeric' })}<span class="muted small"> · ${held === 0 ? 'امروز' : `${held} روز`}</span>` : '—';
+    const pnlCls = p.pnl_pct > 0 ? 'pos' : p.pnl_pct < 0 ? 'neg' : '';
+    const st = p.styles || [];
+    const styles = st.length ? `<details class="pf-src"><summary>${esc(st[0][0])}<span class="muted small"> · ${esc(st[0][1])}${st.length > 1 ? ` · +${st.length - 1}` : ''}</span></summary>
+      <ul>${st.map(([label, kind, sd, pct]) => `<li><span class="${sideCls(sd)}">${sideFa(sd)}</span> ${esc(label)} <span class="muted">(${esc(kind)})</span> <b class="num">${pct}%</b></li>`).join('')}</ul></details>`
+      : '<span class="muted small">از اجرای امشب</span>';
     return `<tr><td><bdi>${esc(p.symbol.replace('USDT', ''))}</bdi></td>
-      <td class="${sideCls(side)}">${sideFa(side)}</td><td class="num">${money(Math.abs(p.notional))}</td>
-      <td class="num">${((Math.abs(p.notional) / eq) * 100).toFixed(1)}%</td><td>${chg}</td></tr>`;
-  }).join('') : '<tr><td colspan="5" class="muted">پوزیشن بازی نیست.</td></tr>';
+      <td class="${sideCls(side)}">${sideFa(side)}</td><td>${styles}</td>
+      <td class="num">${money(Math.abs(p.notional))}<span class="muted small"> · ${((Math.abs(p.notional) / eq) * 100).toFixed(1)}%</span></td>
+      <td class="num">${p.entry != null ? fmtPx(p.entry) : '—'}</td><td>${since}</td>
+      <td class="num">${p.price != null ? fmtPx(p.price) : '—'}</td>
+      <td class="num ${pnlCls}">${p.pnl_pct != null ? fr(p.pnl_pct) + '%' : '—'}</td><td>${chg}</td></tr>`;
+  }).join('') : '<tr><td colspan="9" class="muted">پوزیشن بازی نیست.</td></tr>';
 }
 
 function renderPortfolioBacktest() {

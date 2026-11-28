@@ -33,6 +33,16 @@ def _row(r) -> dict:
     return d
 
 
+def _position(symbol: str, v, prev) -> dict:
+    d = v if isinstance(v, dict) else {"n": v}
+    n, entry, px = d.get("n"), d.get("entry"), d.get("px")
+    pnl = None
+    if entry and px and n:
+        pnl = (px / entry - 1) * 100 * (1 if n > 0 else -1)
+    return {"symbol": symbol, "notional": n, "prev": prev, "entry": entry, "since": d.get("since"), "price": px, "pnl_pct": pnl,
+            "styles": d.get("src") or []}
+
+
 class WebRepo:
     def __init__(self, store: Store):
         self.s = store
@@ -91,6 +101,7 @@ class WebRepo:
                 load = lambda v: json.loads(v) if isinstance(v, str) else (v or {})  # noqa: E731
                 pos = load(last["positions"]) if last else {}
                 before = load(prev["positions"]) if prev else {}
+                size = lambda v: v["n"] if isinstance(v, dict) else v  # noqa: E731  (older days stored a bare number)
                 t = days[-1] if days else None
                 out.append({"combo": b["combo"], "mode": b["mode"], "capital": b["capital"], "equity": b["equity"],
                             "started_day": b["started_day"], "last_day": b["last_day"], "days": len(days),
@@ -98,7 +109,7 @@ class WebRepo:
                             "fees": sum(d["fees"] for d in days), "funding": sum(d["funding"] for d in days),
                             "today": dict(t) | {"day": dt_to_ms(t["day"])} if t else None,
                             "curve": curve,
-                            "positions": sorted(({"symbol": k, "notional": v, "prev": before.get(k)} for k, v in pos.items()),
+                            "positions": sorted((_position(k, v, size(before[k]) if k in before else None) for k, v in pos.items()),
                                                 key=lambda x: -abs(x["notional"])),
                             "closed": sorted(k for k in before if k not in pos)})
         return out

@@ -284,3 +284,8 @@ th[title] { cursor: help; text-decoration: underline dotted rgba(145,151,174,.6)
 .tag { font-size: 12px; padding: 1px 8px; border-radius: 999px; background: var(--line); white-space: nowrap; }
 .tag.new { background: rgba(233, 180, 76, .18); color: var(--saffron); }
 @media (max-width: 720px) { .pf-books { grid-template-columns: 1fr; } #pf-chart { height: 240px; } }
+.pf-exit { background: var(--surface); border-inline-start: 3px solid var(--saffron); border-radius: var(--radius-s); padding: 10px 14px; margin: 0 0 12px; font-size: 14px; line-height: 1.8; }
+.pf-src summary { cursor: pointer; white-space: nowrap; list-style: none; }
+.pf-src summary::-webkit-details-marker { display: none; }
+.pf-src[open] summary { color: var(--saffron); }
+.pf-src ul { margin: 6px 0 0; padding: 0; list-style: none; display: grid; gap: 3px; font-size: 13px; white-space: nowrap; }

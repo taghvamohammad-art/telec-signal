@@ -30,7 +30,7 @@ from app.data.store import Store, dt_to_ms, ms_to_dt
 from app.data.universe import all_perp_symbols, lbank_index, normalize_base
 from app.lab.styles import build_ctx
 from app.portfolio.book import Book
-from app.portfolio.targets import COMBO_FA, COMBOS, combo_weights, member_weights
+from app.portfolio.targets import COMBO_FA, COMBOS, combo_weights, contributions, member_weights
 
 log = logging.getLogger("telec.portfolio")
 DAY = 86_400_000
@@ -163,9 +163,12 @@ class PortfolioService:
                 book, start = Book(CAPITAL), day
                 days = [day]
             else:
-                book = Book(float(row["equity"]), {k: float(v) for k, v in json.loads(row["positions"]).items()})
+                load = lambda v: json.loads(v) if isinstance(v, str) else (v or {})  # noqa: E731
+                book = Book(float(row["equity"]), {k: float(v) for k, v in load(row["positions"]).items()}, load(row.get("meta")))
                 start = int(row["started_day"])
                 days = [d for d in w.index if int(row["last_day"]) < d <= day]
+                if any(s not in book.meta for s in book.positions):
+                    await self.rebuild_meta(row, book, c.close)
             records = []
             for d in days:
                 rets = c.rets.loc[d].dropna().to_dict() if d in c.rets.index else {}
@@ -173,12 +176,36 @@ class PortfolioService:
                 price_pnl, fund_paid = (0.0, 0.0) if row is None and d == days[0] else book.mark(rets, fund)
                 target = w.loc[d][w.loc[d] != 0].to_dict()
                 rb = book.rebalance(target, allowed if mode == "exec" else None, minimum if mode == "exec" else 0.0)
-                records.append((d, book.equity, price_pnl, fund_paid, rb, book.summary(), dict(book.positions)))
+                px = c.close.loc[d].dropna().to_dict() if d in c.close.index else {}
+                book.update_meta(d, px)
+                src = contributions(members, combo, d, list(book.positions))
+                records.append((d, book.equity, price_pnl, fund_paid, rb, book.summary(), book.snapshot(px, src)))
             await self.save(combo, mode, start, book, records)
             report[(combo, mode)] = {"equity": book.equity, "start": start, "records": records}
         log.info("portfolio run for %s done in %.0fs", datetime.fromtimestamp(day / 1000, tz=timezone.utc).date(), time.time() - t0)
         await self.notify(day, report, existing)
         return report
+
+    async def rebuild_meta(self, row: dict, book: Book, close: pd.DataFrame) -> None:
+        """Books created before entry prices were tracked: find each position's opening day from history."""
+        async with self.store.pool.acquire() as con:
+            hist = await con.fetch("SELECT day, positions FROM portfolio_days WHERE book_id=$1 ORDER BY day DESC", row["id"])
+        days = []
+        for h in hist:
+            pos = json.loads(h["positions"]) if isinstance(h["positions"], str) else (h["positions"] or {})
+            days.append((dt_to_ms(h["day"]), {k: (v["n"] if isinstance(v, dict) else v) for k, v in pos.items()}))
+        for s, n in book.positions.items():
+            if s in book.meta:
+                continue
+            side, since = (1 if n > 0 else -1), None
+            for d, pos in days:
+                v = pos.get(s)
+                if v is None or (v > 0) != (side > 0):
+                    break
+                since = d
+            since = since or int(row["last_day"])
+            px = close[s].get(since) if s in close else None
+            book.meta[s] = {"entry": float(px) if px is not None and px == px else None, "since": since, "side": side}
 
     async def save(self, combo: str, mode: str, start: int, book: Book, records: list) -> None:
         if not records:
@@ -186,11 +213,11 @@ class PortfolioService:
         async with self.store.pool.acquire() as con:
             async with con.transaction():
                 bid = await con.fetchval(
-                    """INSERT INTO portfolio_books (combo, mode, capital, started_day, last_day, equity, positions)
-                       VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb)
-                       ON CONFLICT (combo, mode) DO UPDATE SET last_day=$5, equity=$6, positions=$7::jsonb, updated_at=now()
+                    """INSERT INTO portfolio_books (combo, mode, capital, started_day, last_day, equity, positions, meta)
+                       VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb)
+                       ON CONFLICT (combo, mode) DO UPDATE SET last_day=$5, equity=$6, positions=$7::jsonb, meta=$8::jsonb, updated_at=now()
                        RETURNING id""",
-                    combo, mode, CAPITAL, start, records[-1][0], book.equity, json.dumps(book.positions))
+                    combo, mode, CAPITAL, start, records[-1][0], book.equity, json.dumps(book.positions), json.dumps(book.meta))
                 for d, eq, price, fund, rb, sm, pos in records:
                     await con.execute(
                         """INSERT INTO portfolio_days (book_id, day, equity, price_pnl, funding, fees, turnover, dropped,
@@ -198,7 +225,7 @@ class PortfolioService:
                            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb)
                            ON CONFLICT (book_id, day) DO NOTHING""",
                         bid, ms_to_dt(d), eq, price, fund, rb["fees"], rb["turnover"], rb["dropped"],
-                        sm["n_long"], sm["n_short"], sm["gross"], sm["net"], json.dumps({k: round(v, 2) for k, v in pos.items()}))
+                        sm["n_long"], sm["n_short"], sm["gross"], sm["net"], json.dumps(pos))
 
     async def notify(self, day: int, report: dict, existing: dict) -> None:
         if not any(r["records"] for r in report.values()):
@@ -216,7 +243,7 @@ class PortfolioService:
             before = rb["before"]
             opened = [s for s in pos if s not in before]
             closed = [s for s in before if s not in pos]
-            flipped = [s for s in pos if s in before and (pos[s] > 0) != (before[s] > 0)]
+            flipped = [s for s in pos if s in before and (pos[s]["n"] > 0) != (before[s] > 0)]
             lines.append(f"\n<b>{COMBO_FA[combo]}</b>\nموجودی: {eq:,.0f} دلار ({total:+.2f}% از شروع، امروز {day_pct:+.2f}%)\n"
                          f"پوزیشن‌ها: {sm['n_long']} خرید، {sm['n_short']} فروش؛ اهرم کل {sm['gross']:.2f}x")
             if opened or closed or flipped:

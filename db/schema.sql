@@ -319,6 +319,7 @@ CREATE TABLE IF NOT EXISTS portfolio_books (
     updated_at   timestamptz      NOT NULL DEFAULT now(),
     UNIQUE (combo, mode)
 );
+ALTER TABLE portfolio_books ADD COLUMN IF NOT EXISTS meta jsonb NOT NULL DEFAULT '{}';
 CREATE TABLE IF NOT EXISTS portfolio_days (
     book_id    integer          NOT NULL REFERENCES portfolio_books(id) ON DELETE CASCADE,
     day        timestamptz      NOT NULL,

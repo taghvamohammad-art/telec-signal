@@ -487,10 +487,14 @@ function renderPortfolioBacktest() {
   $('#pf-bt-note').textContent = `اجرا شده ${when(bt.created_at)}. محور قیمت لگاریتمی است. «دورهٔ قفل» از ۲۰۲۵ به بعد است که موقع انتخاب سبک‌ها دیده نشده بود. `
     + `از ${s.coins} ارز بایننس، ${s.lbank_listed} ارز امروز در ال‌بانک هست؛ همین فهرست امروز برای کل گذشته به کار رفته.`;
   const PER = { discovery: 'تا ۲۰۲۴', holdout: 'دورهٔ قفل' };
-  $('#pf-bt-rows').innerHTML = ['exec', 'ideal'].flatMap((mode) => ['discovery', 'holdout'].map((per) => {
-    const r = (s.books[`${pf.combo}:${mode}`] || {})[per] || {};
+  const MODES = [['exec', 'اجرایی'], ['ideal', 'ایده‌آل'], ['exec:stop25', 'اجرایی + استاپ ۲۵٪'], ['exec:stop40', 'اجرایی + استاپ ۴۰٪'], ['exec:stop60', 'اجرایی + استاپ ۶۰٪']]
+    .filter(([k]) => s.books[`${pf.combo}:${k}`]);
+  $('#pf-bt-rows').innerHTML = MODES.flatMap(([mode, label]) => ['discovery', 'holdout'].map((per) => {
+    const book = s.books[`${pf.combo}:${mode}`] || {};
+    const r = book[per] || {};
     const cls = (v) => (v > 0 ? 'pos' : v < 0 ? 'neg' : '');
-    return `<tr><td>${mode === 'exec' ? 'اجرایی' : 'ایده‌آل'}</td><td>${PER[per]}</td>
+    const stops = per === 'discovery' && book.stops != null && mode.includes('stop') ? `<span class="muted small"> · ${book.stops} بار استاپ</span>` : '';
+    return `<tr><td>${label}${stops}</td><td>${PER[per]}</td>
       <td class="num">${r.sharpe ?? '—'}</td><td class="num ${cls(r.cagr)}">${r.cagr ?? '—'}%</td>
       <td class="num neg">${r.max_dd ?? '—'}%</td><td class="num ${cls(r.total)}">${r.total ?? '—'}%</td></tr>`;
   })).join('');

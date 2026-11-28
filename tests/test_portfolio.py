@@ -160,3 +160,39 @@ def test_contributions_add_up_to_the_position():
         # the biggest contributor usually points the same way as the position
     agree = sum(src[s][0][2] == (1 if w.loc[day, s] > 0 else -1) for s in held)
     assert agree >= 0.7 * len(held)
+
+
+def test_emergency_stop_closes_blocks_and_charges():
+    D = 86_400_000
+    b = Book(1000.0)
+    b.rebalance({"AUSDT": 0.1, "BUSDT": -0.1}, fee=0.0, day=D)
+    b.update_meta(D, {"AUSDT": 100.0, "BUSDT": 10.0})
+    # day 2: A dips to 55 (long stop at 60 hit), B spikes to 15 (short stop at 14 hit, gapped open at 14.5)
+    st = b.check_stops(0.4, 2 * D, {"AUSDT": (95.0, 101.0, 55.0), "BUSDT": (14.5, 15.0, 14.0)}, {"AUSDT": 100.0, "BUSDT": 10.0})
+    assert abs(st["AUSDT"] - (-0.4)) < 1e-12 and abs(st["BUSDT"] - 0.45) < 1e-12
+    eq0 = b.equity
+    b.mark({"AUSDT": -0.05, "BUSDT": 0.2}, {}, st)
+    assert not b.positions
+    assert abs(b.equity - (eq0 - 40 - 45 - 0.001 * (60 + 145))) < 1e-9
+    b.rebalance({"AUSDT": 0.1, "BUSDT": 0.1}, fee=0.0, day=3 * D)        # A long blocked; B long is the other way: allowed
+    assert set(b.positions) == {"BUSDT"}
+    b.rebalance({"AUSDT": 0.1, "BUSDT": 0.1}, fee=0.0, day=10 * D)       # cooldown over
+    assert set(b.positions) == {"AUSDT", "BUSDT"}
+
+
+def test_simulate_with_stops():
+    import sys
+    import types
+
+    sys.modules.setdefault("httpx", types.ModuleType("httpx"))
+    from app.portfolio.backtest import simulate
+
+    d, f = market(13, n=50, days=500)
+    c = build_ctx(d, f)
+    ohl = {"open": c.close.shift(1), "high": c.close * 1.15, "low": c.close * 0.85}
+    w = combo_weights(member_weights(c), "combo_all_pos")
+    none = simulate(c, w, None, 0.0)
+    far = simulate(c, w, None, 0.0, 5.0, ohl)       # never reachable for longs: same as no stop for most days
+    tight = simulate(c, w, None, 0.0, 0.05, ohl)
+    assert none["stops"].sum() == 0 and tight["stops"].sum() > 50
+    assert far["stops"].sum() < tight["stops"].sum()
